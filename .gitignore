@@ -1,0 +1,25 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Chrome isolated user profile and CDP session data
+.chrome_isolated/
+.browser_profile/
+
+# OAuth credentials & access tokens
+credentials.json
+token.json
+
+# Deliverables & personal coursework files (protect personal PDFs, docs, student IDs)
+deliverables/*
+!deliverables/.gitkeep
+
+# Documents and archives outside deliverables
+*.pdf
+*.docx
+*.zip
+
+# Logs and system generated files
+*.log
+.system_generated/
