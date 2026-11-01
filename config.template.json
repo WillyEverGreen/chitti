@@ -1,0 +1,10 @@
+{
+  "student_name": "Your Full Name",
+  "roll_number": "YOUR_ROLL_NUMBER",
+  "department": "Computer Science & Engineering",
+  "institution": "Your College or University",
+  "output_dir": "output",
+  "credentials_path": "credentials.json",
+  "token_path": "token.json",
+  "chrome_debug_port": 9444
+}
