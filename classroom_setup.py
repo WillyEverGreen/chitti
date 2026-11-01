@@ -112,15 +112,42 @@ def run_setup(argv: Optional[List[str]] = None) -> int:
     print("==========================================================")
 
     if is_interactive:
-        print("Please provide your academic profile details for assignment headers.\n")
-        name = prompt_value("Student Full Name", default=args.name or existing_cfg.student_name, required=True)
-        roll = prompt_value("Roll / Registration Number", default=args.roll or existing_cfg.roll_number, required=True)
-        dept = prompt_value("Department / Branch", default=args.dept or existing_cfg.department)
-        institution = prompt_value("College / University", default=args.institution or existing_cfg.institution)
-        out_dir = prompt_value("Deliverables Output Directory", default=args.output_dir or existing_cfg.output_dir)
-        creds_path = prompt_value("Google credentials.json Path", default=args.credentials or existing_cfg.credentials_path)
-        token_path = existing_cfg.token_path or args.token
-        port = existing_cfg.chrome_debug_port or args.port
+        if existing_cfg.is_configured():
+            print(f"[+] Found existing academic profile for {existing_cfg.student_name} ({existing_cfg.roll_number})!")
+            print(f"    • Name:        {existing_cfg.student_name}")
+            print(f"    • Roll Number: {existing_cfg.roll_number}")
+            print(f"    • Department:  {existing_cfg.department}")
+            print(f"    • Institution: {existing_cfg.institution}")
+            print(f"    • Output Dir:  {existing_cfg.output_dir}\n")
+            keep = prompt_value("Keep these profile details? (Y/n)", default="y")
+            if keep.lower().startswith("y"):
+                name = existing_cfg.student_name
+                roll = existing_cfg.roll_number
+                dept = existing_cfg.department
+                institution = existing_cfg.institution
+                out_dir = existing_cfg.output_dir
+                creds_path = existing_cfg.credentials_path
+                token_path = existing_cfg.token_path
+                port = existing_cfg.chrome_debug_port
+            else:
+                name = prompt_value("Student Full Name", default=existing_cfg.student_name, required=True)
+                roll = prompt_value("Roll / Registration Number", default=existing_cfg.roll_number, required=True)
+                dept = prompt_value("Department / Branch", default=existing_cfg.department)
+                institution = prompt_value("College / University", default=existing_cfg.institution)
+                out_dir = prompt_value("Deliverables Output Directory", default=existing_cfg.output_dir)
+                creds_path = prompt_value("Google credentials.json Path", default=existing_cfg.credentials_path)
+                token_path = existing_cfg.token_path or args.token
+                port = existing_cfg.chrome_debug_port or args.port
+        else:
+            print("Please provide your academic profile details for assignment headers.\n")
+            name = prompt_value("Student Full Name", default=args.name or existing_cfg.student_name, required=True)
+            roll = prompt_value("Roll / Registration Number", default=args.roll or existing_cfg.roll_number, required=True)
+            dept = prompt_value("Department / Branch", default=args.dept or existing_cfg.department)
+            institution = prompt_value("College / University", default=args.institution or existing_cfg.institution)
+            out_dir = prompt_value("Deliverables Output Directory", default=args.output_dir or existing_cfg.output_dir)
+            creds_path = prompt_value("Google credentials.json Path", default=args.credentials or existing_cfg.credentials_path)
+            token_path = existing_cfg.token_path or args.token
+            port = existing_cfg.chrome_debug_port or args.port
     else:
         name = args.name or existing_cfg.student_name
         roll = args.roll or existing_cfg.roll_number
