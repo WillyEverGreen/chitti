@@ -221,10 +221,20 @@ def run_setup(argv: Optional[List[str]] = None) -> int:
         print(f"[OK] Google credentials file created automatically at {check_creds}")
 
     # Auto-check Downloads folder
-    if not check_creds.exists() and is_interactive:
+    is_invalid_creds = False
+    if check_creds.exists():
+        try:
+            with open(check_creds, "r", encoding="utf-8") as f:
+                cdata = json.load(f)
+            if "web" in cdata and "installed" not in cdata:
+                is_invalid_creds = True
+        except Exception:
+            pass
+
+    if (not check_creds.exists() or is_invalid_creds) and is_interactive:
         check_downloads_for_credentials(check_creds)
 
-    if not check_creds.exists():
+    if not check_creds.exists() or is_invalid_creds:
         if args.open_browser:
             print("[*] Opening Google Cloud Console in your default browser...")
             webbrowser.open("https://console.cloud.google.com/apis/credentials")
