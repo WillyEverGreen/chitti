@@ -6,6 +6,8 @@ Empowers you and your agent to inspect, track, and manage assignments and submis
 import os
 import sys
 import json
+import glob
+import shutil
 import argparse
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
@@ -40,6 +42,57 @@ CREDENTIALS_FILE = os.path.join(os.path.dirname(__file__), 'credentials.json')
 TOKEN_FILE = os.path.join(os.path.dirname(__file__), 'token.json')
 
 
+def resolve_credentials_file() -> str:
+    """Find or auto-link a valid Desktop app credentials file from project dir or Downloads."""
+    # 1. If credentials.json exists and is Desktop app ('installed'), return it
+    if os.path.exists(CREDENTIALS_FILE):
+        try:
+            with open(CREDENTIALS_FILE, 'r', encoding='utf-8') as f:
+                cdata = json.load(f)
+            if 'installed' in cdata:
+                return CREDENTIALS_FILE
+        except Exception:
+            pass
+
+    # 2. Check current working directory and script directory for client_secret_*.json
+    candidate_dirs = [os.getcwd(), os.path.dirname(__file__)]
+    seen_dirs = set()
+    for d in candidate_dirs:
+        if not d or d in seen_dirs:
+            continue
+        seen_dirs.add(d)
+        for pat in ["client_secret_*.json", "client_secrets_*.json", "credentials*.json"]:
+            for match in sorted(glob.glob(os.path.join(d, pat)), key=os.path.getmtime, reverse=True):
+                if os.path.abspath(match) == os.path.abspath(CREDENTIALS_FILE):
+                    continue
+                try:
+                    with open(match, 'r', encoding='utf-8') as f:
+                        cdata = json.load(f)
+                    if 'installed' in cdata:
+                        shutil.copyfile(match, CREDENTIALS_FILE)
+                        print(f"[+] Auto-detected Desktop credentials in project folder: {os.path.basename(match)} -> Saved as credentials.json")
+                        return CREDENTIALS_FILE
+                except Exception:
+                    continue
+
+    # 3. Check Downloads folder for client_secret_*.json
+    dl_dir = os.path.expanduser("~/Downloads")
+    if os.path.exists(dl_dir):
+        for pat in ["client_secret_*.json", "client_secrets_*.json"]:
+            for match in sorted(glob.glob(os.path.join(dl_dir, pat)), key=os.path.getmtime, reverse=True):
+                try:
+                    with open(match, 'r', encoding='utf-8') as f:
+                        cdata = json.load(f)
+                    if 'installed' in cdata:
+                        shutil.copyfile(match, CREDENTIALS_FILE)
+                        print(f"[+] Auto-detected Desktop credentials in Downloads: {os.path.basename(match)} -> Saved as credentials.json")
+                        return CREDENTIALS_FILE
+                except Exception:
+                    continue
+
+    return CREDENTIALS_FILE
+
+
 def get_credentials() -> Credentials:
     """Authenticates the user and returns OAuth2 credentials."""
     creds = None
@@ -55,15 +108,16 @@ def get_credentials() -> Credentials:
                 creds = None
 
         if not creds:
-            if not os.path.exists(CREDENTIALS_FILE):
+            creds_file = resolve_credentials_file()
+            if not os.path.exists(creds_file):
                 raise FileNotFoundError(
-                    f"'{CREDENTIALS_FILE}' not found!\n"
+                    f"'{creds_file}' not found!\n"
                     "Please download your OAuth client ID credentials from Google Cloud Console "
                     "and place the JSON file as 'credentials.json' in this folder."
                 )
             # Check for Desktop app vs Web application
             try:
-                with open(CREDENTIALS_FILE, 'r', encoding='utf-8') as f:
+                with open(creds_file, 'r', encoding='utf-8') as f:
                     creds_data = json.load(f)
                 if 'web' in creds_data and 'installed' not in creds_data:
                     project_id = creds_data.get('web', {}).get('project_id', '')
@@ -79,7 +133,9 @@ def get_credentials() -> Credentials:
                     print("2. Click '+ Create credentials' -> 'OAuth client ID'")
                     print("3. Application type: Select 'Desktop app' (NOT Web application) -> Name: 'Chitti'")
                     print("4. Click 'Create', then click 'DOWNLOAD JSON'")
-                    print("5. Save it to your Downloads folder, then run: python chitti.py setup\n")
+                    print("5. Save options:")
+                    print("   • Place it directly in this project directory as 'credentials.json' (or keep Google's 'client_secret_*.json' filename)")
+                    print("   • Or leave it in Downloads and run: python chitti.py setup\n")
                     print("=" * 68 + "\n")
                     raise ValueError("OAuth credentials must be created with Application type 'Desktop app', not 'Web application'.")
             except (json.JSONDecodeError, OSError):
@@ -95,7 +151,7 @@ def get_credentials() -> Credentials:
             print("    Click 'Advanced' -> Click 'Go to Chitti (unsafe)' -> 'Continue'")
             print("  • Check all permission boxes so Chitti can read coursework & sync.")
             print("=" * 64 + "\n")
-            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(creds_file, SCOPES)
             creds = flow.run_local_server(port=0)
             print("\n[OK] Authorization successful! Token saved to token.json.\n")
 

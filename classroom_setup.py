@@ -65,15 +65,16 @@ def prompt_value(prompt: str, default: str = "", required: bool = False) -> str:
 
 
 def check_downloads_for_credentials(dest_path: Path) -> bool:
-    """Scan the user's Downloads folder for client_secret_*.json or credentials.json."""
-    downloads_dir = Path.home() / "Downloads"
-    if not downloads_dir.exists():
-        return False
-
+    """Scan the project directory and Downloads folder for client_secret_*.json or credentials.json."""
+    search_dirs = [Path.cwd(), Path.home() / "Downloads"]
     patterns = ["client_secret_*.json", "credentials*.json"]
     candidates: List[Path] = []
-    for pat in patterns:
-        candidates.extend(downloads_dir.glob(pat))
+    for sdir in search_dirs:
+        if sdir.exists():
+            for pat in patterns:
+                for c in sdir.glob(pat):
+                    if c.resolve() != dest_path.resolve():
+                        candidates.append(c)
 
     if not candidates:
         return False
@@ -82,7 +83,7 @@ def check_downloads_for_credentials(dest_path: Path) -> bool:
     candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     latest = candidates[0]
 
-    print(f"\n[+] Auto-detected Google credentials in your Downloads folder:")
+    print(f"\n[+] Auto-detected Google credentials ({latest.name}):")
     print(f"    Found: {latest.name}")
     try:
         with open(latest, "r", encoding="utf-8") as f:
