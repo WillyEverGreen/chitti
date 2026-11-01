@@ -33,11 +33,12 @@ def test_main_parser_help(capsys):
     assert "submit" in captured.out
     assert "notes" in captured.out
     assert "materials" in captured.out
+    assert "status" in captured.out
 
 
 @pytest.mark.parametrize(
     "subcommand",
-    ["setup", "courses", "pending", "details", "build", "attach-proof", "review", "submit", "notes", "materials"],
+    ["setup", "courses", "pending", "details", "build", "attach-proof", "review", "submit", "notes", "materials", "status"],
 )
 def test_subcommand_helps(subcommand, capsys):
     """Verify each subcommand provides standard --help output."""
@@ -383,3 +384,65 @@ def test_materials_command_local_pdf(tmp_path):
     expected_txt = out_dir / "computer_networks" / "materials" / "lab_instructions_extracted.txt"
     assert expected_txt.exists()
     assert "Wireshark" in expected_txt.read_text(encoding="utf-8")
+
+
+def test_status_command_dispatch(tmp_path):
+    """Test status subcommand displays unified dashboard."""
+    out_dir = tmp_path / "dashboard_output"
+    cfg = StudentConfig(
+        student_name="Sai Balkawade",
+        roll_number="10707",
+        department="Computer Engineering",
+        institution="Fr. CRCE",
+        output_dir=str(out_dir),
+    )
+    cfg_file = tmp_path / "cfg.json"
+    save_config(cfg, cfg_file)
+
+    ret = classroom_agent.main([
+        "status",
+        "--config-path", str(cfg_file),
+    ])
+    assert ret == 0
+
+
+def test_build_personalize_mode(tmp_path):
+    """Test build command with --mode personalize redacts old student details."""
+    import pymupdf as fitz
+    out_dir = tmp_path / "out_pers"
+    cfg = StudentConfig(
+        student_name="Sai Balkawade",
+        roll_number="10707",
+        output_dir=str(out_dir),
+    )
+    cfg_file = tmp_path / "cfg.json"
+    save_config(cfg, cfg_file)
+
+    ref_pdf = tmp_path / "senior_assignment.pdf"
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((50, 100), "Lab 2: Process Scheduling\nAuthor: Bob Vance (Roll: 88888)")
+    doc.save(str(ref_pdf))
+    doc.close()
+
+    ret = classroom_agent.main([
+        "build",
+        "--course", "Operating Systems",
+        "--assignment", "Lab 2",
+        "--template", str(ref_pdf),
+        "--mode", "personalize",
+        "--old-name", "Bob Vance",
+        "--old-roll", "88888",
+        "--config-path", str(cfg_file),
+    ])
+    assert ret == 0
+
+    staged_pdf = out_dir / "operating_systems" / "lab_2" / "final_submission.pdf"
+    assert staged_pdf.exists()
+
+    doc_out = fitz.open(str(staged_pdf))
+    text = doc_out[0].get_text()
+    doc_out.close()
+    assert "Sai Balkawade" in text
+    assert "10707" in text
+    assert "Bob Vance" not in text

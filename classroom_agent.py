@@ -56,6 +56,7 @@ from classroom.media_processor import (
 from classroom.pdf_engine import (
     augment_teacher_template,
     build_report_pdf,
+    personalize_reference_pdf,
 )
 from classroom.workspace import (
     CourseWorkspace,
@@ -416,7 +417,19 @@ def cmd_build(args: argparse.Namespace) -> int:
         "title": assignment_title,
     }
 
-    if args.template:
+    if getattr(args, "mode", "scratch") == "personalize" or (args.template and (getattr(args, "old_name", None) or getattr(args, "old_roll", None))):
+        template_path = Path(args.template).expanduser().resolve()
+        if not template_path.exists():
+            print(f"[!] Reference PDF not found: {template_path}")
+            return 1
+        personalize_reference_pdf(
+            source_pdf=template_path,
+            config=config,
+            output_path=temp_pdf_out,
+            old_name=getattr(args, "old_name", None),
+            old_roll=getattr(args, "old_roll", None),
+        )
+    elif args.template:
         template_path = Path(args.template).expanduser().resolve()
         if not template_path.exists():
             print(f"[!] Teacher template PDF not found: {template_path}")
@@ -731,6 +744,34 @@ def cmd_notes(args: argparse.Namespace) -> int:
     """Generate structured study notes, revision sheets, and publication PDF."""
     config, _ = _load_student_config(args.config_path)
     output_root = Path(config.output_dir).expanduser().resolve()
+
+    # List notes mode if --list or no topic specified
+    if getattr(args, "list", False) or not getattr(args, "topic", None):
+        notes_files = list(output_root.glob("**/notes/**/notes.md")) if output_root.exists() else []
+        if not notes_files:
+            print("[*] No study notes found yet in coursework workspace.")
+            print("Tip: Run 'python chitti.py notes --course <course> --topic <topic>' to create one.")
+            return 0
+        if HAS_RICH and console:
+            table = Table(title="📚 All Generated Study Notes & Revision Sheets", border_style="cyan")
+            table.add_column("Course", style="cyan")
+            table.add_column("Topic", style="white")
+            table.add_column("Markdown Note", style="yellow")
+            table.add_column("PDF Sheet", style="green")
+            for nf in notes_files:
+                topic = nf.parent.name.replace("_", " ").title()
+                cslug = nf.parent.parent.parent.name
+                pdf_f = nf.parent / "notes.pdf"
+                pdf_str = str(pdf_f.name) if pdf_f.exists() else "-"
+                table.add_row(cslug, topic, nf.name, pdf_str)
+            console.print(table)
+        else:
+            print("\n--- Available Study Notes ---")
+            for nf in notes_files:
+                print(f"• {nf.parent.parent.parent.name} | {nf.parent.name}: {nf}")
+            print()
+        return 0
+
     ws = get_course_workspace(output_root, args.course)
 
     theory_text = (args.theory or "").strip()
@@ -862,6 +903,112 @@ def cmd_materials(args: argparse.Namespace) -> int:
 
 
 # =====================================================================
+# Command: status
+# =====================================================================
+
+def cmd_status(args: argparse.Namespace) -> int:
+    """Unified academic dashboard: pending assignments, staged deliverables, notes & materials."""
+    config, _ = _load_student_config(args.config_path)
+    output_root = Path(config.output_dir).expanduser().resolve()
+
+    if HAS_RICH and console:
+        header = Text()
+        header.append("🎓 Student Academic Dashboard | Chitti\n", style="bold cyan")
+        header.append(f"Name: {config.student_name or 'Not Set'}  |  Roll: {config.roll_number or 'Not Set'}\n", style="white")
+        dept_info = config.department or "Not Set"
+        inst_info = config.institution or "Not Set"
+        header.append(f"Dept: {dept_info}  |  {inst_info}\n", style="dim")
+        console.print(Panel(header, border_style="blue", expand=False))
+
+    # 1. Check Pending Assignments via Classroom API if credentials exist
+    pending_list = []
+    try:
+        if os.path.exists(classroom_manager.TOKEN_FILE) or os.path.exists(classroom_manager.CREDENTIALS_FILE):
+            cs, _ = classroom_manager.get_services()
+            pending_list = classroom_manager.get_pending_assignments(cs, ignore_pattern="HMI")
+    except Exception:
+        pass
+
+    if HAS_RICH and console:
+        # Table of Pending Assignments
+        p_table = Table(title="🚨 Pending & Missing Coursework", border_style="red")
+        p_table.add_column("Course", style="cyan")
+        p_table.add_column("Assignment", style="white")
+        p_table.add_column("Due Date", style="yellow")
+        p_table.add_column("Urgency", style="bold")
+
+        if pending_list:
+            for p in pending_list[:8]:
+                due_dt = p.get("due_datetime")
+                urgency = "[green]Upcoming[/green]"
+                if due_dt:
+                    now = datetime.now(timezone.utc)
+                    if due_dt < now:
+                        urgency = "[red]OVERDUE[/red]"
+                    elif (due_dt - now).days <= 2:
+                        urgency = "[yellow]Due Soon[/yellow]"
+                p_table.add_row(
+                    p.get("course_name", "")[:24],
+                    p.get("assignment_title", "")[:32],
+                    p.get("due_date", "No due date"),
+                    urgency,
+                )
+            console.print(p_table)
+        else:
+            console.print("[green]✓ No pending coursework detected via Google Classroom.[/green]\n")
+
+        # Staged Deliverables
+        manifests = list(output_root.glob("**/manifest.json")) if output_root.exists() else []
+        d_table = Table(title="📦 Staged Deliverables (Ready for Review / Submit)", border_style="green")
+        d_table.add_column("Course", style="cyan")
+        d_table.add_column("Assignment", style="white")
+        d_table.add_column("Pages", justify="center")
+        d_table.add_column("Audit Status", style="bold")
+
+        for mf in manifests[:6]:
+            try:
+                mdata = json.loads(mf.read_text(encoding="utf-8"))
+                d_table.add_row(
+                    mdata.get("course_name", "")[:24],
+                    mdata.get("assignment_title", "")[:32],
+                    str(mdata.get("page_count", "-")),
+                    "[green]Ready[/green]" if mdata.get("status") == "ready_for_review" else "[yellow]Action Needed[/yellow]",
+                )
+            except Exception:
+                pass
+        if manifests:
+            console.print(d_table)
+        else:
+            console.print("[dim]No deliverables currently staged in output/.[/dim]\n")
+
+        # Study Notes
+        notes_mds = list(output_root.glob("**/notes/**/notes.md")) if output_root.exists() else []
+        n_table = Table(title="📚 Course Study Notes & Revision Sheets", border_style="cyan")
+        n_table.add_column("Course Slug", style="cyan")
+        n_table.add_column("Topic", style="white")
+        n_table.add_column("Has PDF", justify="center")
+
+        for n in notes_mds[:6]:
+            topic_name = n.parent.name.replace("_", " ").title()
+            course_slug = n.parent.parent.parent.name
+            has_pdf = "[green]Yes[/green]" if (n.parent / "notes.pdf").exists() else "[dim]No[/dim]"
+            n_table.add_row(course_slug, topic_name, has_pdf)
+
+        if notes_mds:
+            console.print(n_table)
+    else:
+        print("\n--- Academic Dashboard ---")
+        print(f"Student: {config.student_name} ({config.roll_number})")
+        print(f"Pending assignments: {len(pending_list)}")
+        manifests = list(output_root.glob("**/manifest.json")) if output_root.exists() else []
+        print(f"Staged deliverables: {len(manifests)}")
+        notes_mds = list(output_root.glob("**/notes/**/notes.md")) if output_root.exists() else []
+        print(f"Study notes:         {len(notes_mds)}\n")
+
+    return 0
+
+
+# =====================================================================
 # Parser Builder & Main Entry Point
 # =====================================================================
 
@@ -926,6 +1073,9 @@ Quick Workflow Guide:
     build_parser.add_argument("--course", required=True, help="Course name or ID")
     build_parser.add_argument("--assignment", required=True, help="Assignment title or ID")
     build_parser.add_argument("--template", help="Optional path to teacher template PDF", default=None)
+    build_parser.add_argument("--mode", choices=["scratch", "template", "personalize"], default="scratch", help="Report compilation strategy")
+    build_parser.add_argument("--old-name", help="Old author name to redact in personalize mode", default=None)
+    build_parser.add_argument("--old-roll", help="Old roll number to redact in personalize mode", default=None)
     build_parser.add_argument("--proof", help="Path to authentic terminal screenshot or observation photo", default=None)
     build_parser.add_argument("--proof-caption", help="Caption describing the proof figure", default=None)
     build_parser.add_argument("--output-dir", help="Override output directory", default=None)
@@ -961,11 +1111,12 @@ Quick Workflow Guide:
         "notes",
         help="Generate structured study notes, revision sheets, and publication PDF",
     )
-    notes_parser.add_argument("--course", required=True, help="Course name or ID")
-    notes_parser.add_argument("--topic", required=True, help="Topic title (e.g. 'TCP Handshake', 'CPU Scheduling')")
+    notes_parser.add_argument("--course", help="Course name or ID", default=None)
+    notes_parser.add_argument("--topic", help="Topic title (e.g. 'TCP Handshake', 'CPU Scheduling')", default=None)
     notes_parser.add_argument("--theory", help="Core theoretical concepts or summary", default="")
     notes_parser.add_argument("--formulas", help="Key formulas, equations, or code snippets", default=None)
     notes_parser.add_argument("--file", help="Path to markdown/text file containing notes content", default=None)
+    notes_parser.add_argument("--list", action="store_true", help="List all generated study notes across courses")
     notes_parser.add_argument("--no-pdf", action="store_true", help="Only save Markdown note, skip PDF compilation")
     notes_parser.add_argument("--config-path", help="Path to student_config.json", default=None)
 
@@ -979,6 +1130,13 @@ Quick Workflow Guide:
     mat_parser.add_argument("--file", help="Path to a local teacher PDF to extract text into workspace", default=None)
     mat_parser.add_argument("--no-extract", action="store_true", help="Skip automatic PDF text extraction")
     mat_parser.add_argument("--config-path", help="Path to student_config.json", default=None)
+
+    # Command: status
+    status_parser = subparsers.add_parser(
+        "status",
+        help="Unified academic dashboard: pending coursework, deliverables, notes & materials",
+    )
+    status_parser.add_argument("--config-path", help="Path to student_config.json", default=None)
 
     return parser
 
@@ -1021,6 +1179,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_notes(args)
     elif args.command == "materials":
         return cmd_materials(args)
+    elif args.command == "status":
+        return cmd_status(args)
     else:
         parser.print_help()
         return 1

@@ -21,6 +21,7 @@ from classroom.pdf_engine import (
     build_report_pdf,
     augment_teacher_template,
     overlay_on_template_page,
+    personalize_reference_pdf,
 )
 from classroom.deliverables import (
     RequirementItem,
@@ -59,6 +60,7 @@ __all__ = [
     "build_report_pdf",
     "augment_teacher_template",
     "overlay_on_template_page",
+    "personalize_reference_pdf",
     "RequirementItem",
     "RequirementAudit",
     "StagedDeliverable",

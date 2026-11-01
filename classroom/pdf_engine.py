@@ -582,9 +582,15 @@ def build_report_pdf(
 
 
 def augment_teacher_template(
-    template_pdf_path: Union[str, Path],
-    solution_pdf_path: Union[str, Path],
-    output_path: Union[str, Path],
+    template_pdf_path: Optional[Union[str, Path]] = None,
+    solution_pdf_path: Optional[Union[str, Path]] = None,
+    output_path: Optional[Union[str, Path]] = None,
+    *,
+    template_path: Optional[Union[str, Path]] = None,
+    solution_sections: Optional[List[Any]] = None,
+    config: Optional[StudentConfig] = None,
+    assignment_meta: Optional[Dict[str, Any]] = None,
+    stamp_student_info: bool = True,
 ) -> Path:
     """Merge continuation solution pages after a teacher-provided prompt/template PDF.
 
@@ -600,11 +606,39 @@ def augment_teacher_template(
         FileNotFoundError: If template_pdf_path or solution_pdf_path does not exist.
         ValueError: If either PDF file cannot be opened or is corrupted.
     """
-    t_path = Path(template_pdf_path).resolve()
+    actual_template = template_pdf_path or template_path
+    if not actual_template:
+        raise ValueError("template_pdf_path or template_path must be provided")
+
+    t_path = Path(actual_template).resolve()
     if not t_path.exists():
         raise FileNotFoundError(f"Template PDF not found: {t_path}")
 
-    s_path = Path(solution_pdf_path).resolve()
+    if not output_path:
+        raise ValueError("output_path must be specified")
+
+    out_p = Path(output_path).resolve()
+    out_p.parent.mkdir(parents=True, exist_ok=True)
+
+    # Compile solution sections if passed instead of solution_pdf_path
+    temp_sol_file = None
+    if solution_sections:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tf:
+            temp_sol_file = Path(tf.name)
+        build_report_pdf(
+            config=config or StudentConfig(),
+            assignment_meta=assignment_meta or {},
+            sections=solution_sections,
+            output_path=temp_sol_file,
+        )
+        actual_solution = temp_sol_file
+    else:
+        actual_solution = solution_pdf_path
+
+    if not actual_solution:
+        raise ValueError("Either solution_pdf_path or solution_sections must be provided")
+
+    s_path = Path(actual_solution).resolve()
     if not s_path.exists():
         raise FileNotFoundError(f"Solution PDF not found: {s_path}")
 
@@ -617,6 +651,15 @@ def augment_teacher_template(
         except Exception as exc:
             raise ValueError(f"Failed to open PDF template file '{t_path}': {exc}") from exc
 
+        # Stamp student credentials on page 0 of template if requested
+        if stamp_student_info and config and config.student_name and len(t_doc) > 0:
+            p0 = t_doc[0]
+            header_rect = fitz.Rect(36, 12, p0.rect.width - 36, 36)
+            p0.draw_rect(header_rect, color=(0.8, 0.85, 0.9), fill=(0.96, 0.98, 1.0), width=0.5)
+            dept_txt = f" | Dept: {config.department}" if config.department else ""
+            txt = f"Student: {config.student_name} | Roll: {config.roll_number}{dept_txt}"
+            p0.insert_textbox(header_rect, txt, fontsize=8.5, fontname="hebo", color=(0.1, 0.2, 0.35), align=fitz.TEXT_ALIGN_CENTER)
+
         try:
             s_doc = fitz.open(str(s_path))
         except Exception as exc:
@@ -625,18 +668,20 @@ def augment_teacher_template(
         merged_doc = fitz.open()
         merged_doc.insert_pdf(t_doc)
         merged_doc.insert_pdf(s_doc)
-
-        out_path = Path(output_path).resolve()
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        merged_doc.save(str(out_path))
-        return out_path
+        merged_doc.save(str(out_p))
+        return out_p
     finally:
-        if merged_doc:
-            merged_doc.close()
         if t_doc:
             t_doc.close()
         if s_doc:
             s_doc.close()
+        if merged_doc:
+            merged_doc.close()
+        if temp_sol_file and temp_sol_file.exists():
+            try:
+                temp_sol_file.unlink()
+            except Exception:
+                pass
 
 
 def overlay_on_template_page(
@@ -736,3 +781,78 @@ def overlay_on_template_page(
     finally:
         if doc:
             doc.close()
+
+
+def personalize_reference_pdf(
+    source_pdf: Union[str, Path],
+    config: StudentConfig,
+    output_path: Union[str, Path],
+    old_name: Optional[str] = None,
+    old_roll: Optional[str] = None,
+    stamp_header: bool = True,
+) -> Path:
+    """Sanitize and personalize a reference assignment PDF with current student credentials.
+
+    Args:
+        source_pdf: Path to the reference or template PDF.
+        config: StudentConfig with student_name, roll_number, etc.
+        output_path: Destination path for personalized PDF.
+        old_name: Optional existing author name to search & redact.
+        old_roll: Optional existing roll number to search & redact.
+        stamp_header: Whether to add a clean academic student banner on page 0 if no old details found.
+
+    Returns:
+        Resolved Path to the personalized PDF.
+    """
+    src = Path(source_pdf).resolve()
+    if not src.exists():
+        raise FileNotFoundError(f"Source PDF not found: {src}")
+
+    out = Path(output_path).resolve()
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    doc = fitz.open(str(src))
+    try:
+        replaced_any = False
+        for page in doc:
+            page_replacements: List[Tuple[fitz.Rect, str]] = []
+
+            # 1. Find old name
+            if old_name:
+                for rect in page.search_for(old_name):
+                    page.add_redact_annot(rect, fill=(1, 1, 1))
+                    page_replacements.append((rect, config.student_name))
+
+            # 2. Find old roll
+            if old_roll:
+                for rect in page.search_for(old_roll):
+                    page.add_redact_annot(rect, fill=(1, 1, 1))
+                    page_replacements.append((rect, config.roll_number))
+
+            # Apply all redactions first before inserting new text
+            if page_replacements:
+                page.apply_redactions()
+                replaced_any = True
+                for rect, new_text in page_replacements:
+                    fsize = rect.height * 0.85 if rect.height > 6 else 10.0
+                    page.insert_text(
+                        (rect.x0, rect.y1 - 1),
+                        new_text,
+                        fontsize=fsize,
+                        fontname="helv",
+                        color=(0, 0, 0),
+                    )
+
+        # 3. If no specific target strings were replaced and stamp_header is True, stamp header on page 0
+        if not replaced_any and stamp_header and len(doc) > 0:
+            p0 = doc[0]
+            header_rect = fitz.Rect(36, 18, p0.rect.width - 36, 44)
+            p0.draw_rect(header_rect, color=(0.8, 0.85, 0.9), fill=(0.95, 0.97, 1.0), width=0.5)
+            dept_part = f" | Dept: {config.department}" if config.department else ""
+            header_text = f"Student: {config.student_name} | Roll: {config.roll_number}{dept_part}"
+            p0.insert_textbox(header_rect, header_text, fontsize=9.0, fontname="hebo", color=(0.1, 0.2, 0.3), align=fitz.TEXT_ALIGN_CENTER)
+
+        doc.save(str(out))
+        return out
+    finally:
+        doc.close()
