@@ -11,6 +11,9 @@ from classroom.pdf_engine import (
     build_report_pdf,
     augment_teacher_template,
     overlay_on_template_page,
+    smart_fill_rubric_fields,
+    fill_lab_manual_questions,
+    fill_lab_manual_questions_doc,
     NumberedCanvas,
 )
 
@@ -433,4 +436,91 @@ def test_overlay_textbox_and_colors(tmp_path: Path):
     assert "Multi-line commentary" in text
     assert "Footer annotation" in text
     res_doc.close()
+
+
+def test_fill_lab_manual_questions_inplace(tmp_path: Path, sample_config: StudentConfig):
+    """Test filling question answers and diagrams directly inside a multi-page lab manual."""
+    manual_pdf = tmp_path / "lab_manual.pdf"
+    doc = fitz.open()
+    # Page 1: Cover sheet with table
+    p1 = doc.new_page(width=595, height=842)
+    p1.draw_line((180, 200), (180, 400))  # Vertical divider
+    p1.insert_text((90, 250), "Name:", fontsize=10)
+    p1.insert_text((90, 300), "Roll No:", fontsize=10)
+    p1.insert_text((90, 350), "Date of Submission:", fontsize=10)
+
+    # Page 2: Procedure & Questions
+    p2 = doc.new_page(width=595, height=842)
+    p2.insert_text((72, 100), "Post Lab Questions:", fontsize=12)
+    p2.insert_text((72, 140), "1. Explain the classification of computer networks.", fontsize=10)
+    p2.insert_text((72, 400), "2. Draw and describe the OSI Reference Model.", fontsize=10)
+    doc.save(manual_pdf)
+    doc.close()
+
+    answers = [
+        {
+            "query": "classification of computer networks",
+            "answer": "Networks are classified by scale (LAN, MAN, WAN), topology (Star, Mesh, Bus), and architecture (Client-Server, P2P).",
+        },
+        {
+            "query": "OSI Reference Model",
+            "answer": "The OSI model consists of 7 layers: Physical, Data Link, Network, Transport, Session, Presentation, Application.",
+        },
+    ]
+
+    out_pdf = tmp_path / "manual_completed.pdf"
+    res = fill_lab_manual_questions(
+        template_path=manual_pdf,
+        answers=answers,
+        output_path=out_pdf,
+        config=sample_config,
+        submission_date="01/11/2026",
+    )
+
+    assert res.exists()
+    out_doc = fitz.open(res)
+    assert len(out_doc) == 2  # Exactly 2 pages preserved, no synthetic extra pages
+
+    # Page 1 checks: student stamped at div_x + 14.0 = 194.0
+    text1 = out_doc[0].get_text()
+    assert sample_config.student_name in text1
+    assert sample_config.roll_number in text1
+    name_hits = out_doc[0].search_for(sample_config.student_name)
+    assert len(name_hits) > 0
+    assert name_hits[0].x0 >= 194.0  # Clear 14pt margin inside the table cell
+
+    # Page 2 checks: questions answered in-place
+    text2 = out_doc[1].get_text()
+    assert "Networks are classified by scale" in text2
+    assert "7 layers: Physical, Data Link" in text2
+    out_doc.close()
+
+
+def test_augment_teacher_template_standalone_inplace(tmp_path: Path, sample_config: StudentConfig):
+    """Test augment_teacher_template when in-place answers are provided without continuation sections."""
+    template_pdf = tmp_path / "prompt_template.pdf"
+    doc = fitz.open()
+    p1 = doc.new_page(width=595, height=842)
+    p1.insert_text((72, 100), "Teacher Prompt & Rubric", fontsize=14)
+    p1.insert_text((72, 150), "Name: ________", fontsize=10)
+    p1.insert_text((72, 250), "Question: What is Cryptography?", fontsize=10)
+    doc.save(template_pdf)
+    doc.close()
+
+    out_pdf = tmp_path / "completed_prompt.pdf"
+    res = augment_teacher_template(
+        template_path=template_pdf,
+        output_path=out_pdf,
+        in_place_answers={"What is Cryptography": "Cryptography is the practice and study of techniques for secure communication."},
+        config=sample_config,
+    )
+
+    assert res.exists()
+    out_doc = fitz.open(res)
+    assert len(out_doc) == 1  # 100% preserves template length, zero extra pages
+    text = out_doc[0].get_text()
+    assert sample_config.student_name in text
+    assert "practice and study of techniques" in text
+    out_doc.close()
+
 

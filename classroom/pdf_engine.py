@@ -13,6 +13,7 @@ Provides dual-mode PDF generation:
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+import re
 import tempfile
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -611,10 +612,26 @@ def smart_fill_rubric_fields(
     v_lines = sorted(list(set(round(x, 1) for x in v_lines)))
 
     def get_val_x(label_rect: Any) -> float:
-        for vx in v_lines:
-            if vx > label_rect.x0 and vx >= label_rect.x1 - 5:
-                return vx + 6
-        return label_rect.x1 + 6
+        # 1. Check if following text on the same line has underscores
+        clip_rect = fitz.Rect(label_rect.x1, label_rect.y0 - 2, label_rect.x1 + 180, label_rect.y1 + 2)
+        following_text = page.get_text("text", clip=clip_rect).strip()
+        if "_" in following_text:
+            return label_rect.x1 + 6.0
+
+        # 2. Find vertical dividing lines spanning across this row's Y coordinates
+        row_vlines = []
+        for d in page.get_drawings():
+            r = d.get("rect")
+            if r and r.width < 3 and r.height > 10:
+                if r.y0 <= label_rect.y1 and r.y1 >= label_rect.y0:
+                    if r.x0 > label_rect.x1 - 2:
+                        row_vlines.append(round(r.x0, 1))
+
+        if row_vlines:
+            div_x = min(row_vlines)
+            return div_x + 14.0  # Safe 14pt margin inside the cell, never touches the line!
+
+        return label_rect.x1 + 14.0
 
     fields_filled = 0
 
@@ -631,11 +648,7 @@ def smart_fill_rubric_fields(
         hits = page.search_for(pat)
         if hits:
             r = hits[0]
-            val_x = (
-                r.x1 + 4
-                if "_" in page.get_text("text", clip=fitz.Rect(r.x1, r.y0 - 2, r.x1 + 160, r.y1 + 2))
-                else get_val_x(r)
-            )
+            val_x = get_val_x(r)
             page.insert_text(
                 fitz.Point(val_x, r.y1 - 1.5),
                 name,
@@ -676,11 +689,7 @@ def smart_fill_rubric_fields(
         hits = page.search_for(pat)
         if hits:
             r = hits[0]
-            val_x = (
-                r.x1 + 4
-                if "_" in page.get_text("text", clip=fitz.Rect(r.x1, r.y0 - 2, r.x1 + 160, r.y1 + 2))
-                else get_val_x(r)
-            )
+            val_x = get_val_x(r)
             page.insert_text(
                 fitz.Point(val_x, r.y1 - 1.5),
                 roll,
@@ -701,11 +710,7 @@ def smart_fill_rubric_fields(
         hits = page.search_for(pat)
         if hits:
             r = hits[-1]
-            val_x = (
-                r.x1 + 4
-                if "_" in page.get_text("text", clip=fitz.Rect(r.x1, r.y0 - 2, r.x1 + 160, r.y1 + 2))
-                else get_val_x(r)
-            )
+            val_x = get_val_x(r)
             page.insert_text(
                 fitz.Point(val_x, r.y1 - 1.5),
                 sub_date,
@@ -735,6 +740,182 @@ def smart_fill_rubric_fields(
     return fields_filled > 0
 
 
+def fill_lab_manual_questions_doc(
+    doc: fitz.Document,
+    answers: Union[List[Dict[str, Any]], Dict[str, Any]],
+) -> int:
+    """Fill question answers directly in-place inside an existing lab manual PDF.
+
+    Args:
+        doc: Open fitz.Document instance.
+        answers: Either a list of answer dicts (with 'query', 'answer'/'text', 'page', 'image', etc.)
+                 or a mapping of search query -> answer text / answer dict.
+
+    Returns:
+        Count of questions successfully found and filled in-place.
+    """
+    if not answers:
+        return 0
+
+    norm_list: List[Dict[str, Any]] = []
+    if isinstance(answers, dict):
+        for q_key, q_val in answers.items():
+            if isinstance(q_val, dict):
+                entry = dict(q_val)
+                if "query" not in entry:
+                    entry["query"] = q_key
+                norm_list.append(entry)
+            else:
+                norm_list.append({"query": q_key, "answer": str(q_val)})
+    elif isinstance(answers, list):
+        for item in answers:
+            if isinstance(item, dict):
+                norm_list.append(item)
+
+    filled_count = 0
+    num_pages = len(doc)
+
+    for item in norm_list:
+        query = str(item.get("query", item.get("question", item.get("pattern", "")))).strip()
+        answer_text = str(item.get("answer", item.get("text", ""))).strip()
+        image_src = item.get("image") or item.get("diagram")
+        fontsize = float(item.get("fontsize", item.get("font_size", 9.5)))
+        raw_font = str(item.get("fontname", item.get("font_name", "helv"))).lower()
+        fontname = _FONT_MAP.get(raw_font, "helv")
+        color = item.get("color", (0.1, 0.12, 0.2))
+
+        # Determine target page(s)
+        explicit_page = item.get("page", item.get("page_index"))
+        if explicit_page is not None and 0 <= int(explicit_page) < num_pages:
+            candidate_pages = [int(explicit_page)]
+        else:
+            candidate_pages = list(range(num_pages))
+
+        found_page = None
+        q_rect = None
+
+        for p_idx in candidate_pages:
+            page = doc[p_idx]
+            hits = page.search_for(query) if query else []
+            if not hits and query:
+                words = [w for w in re.sub(r"[^\w\s]", " ", query).split() if len(w) > 3]
+                if words:
+                    sub_pat = " ".join(words[:4])
+                    hits = page.search_for(sub_pat)
+                    if not hits and len(words) >= 2:
+                        hits = page.search_for(" ".join(words[-2:]))
+
+            if hits:
+                found_page = page
+                q_rect = hits[0]
+                break
+
+        if not found_page:
+            if explicit_page is not None and 0 <= int(explicit_page) < num_pages and "rect" in item:
+                found_page = doc[int(explicit_page)]
+                q_rect = fitz.Rect(item["rect"])
+            else:
+                continue
+
+        page = found_page
+        if "rect" in item:
+            box = fitz.Rect(item["rect"])
+        else:
+            box_x0 = max(54.0, q_rect.x0 if q_rect.x0 < page.rect.width * 0.4 else 72.0)
+            box_x1 = page.rect.width - 54.0
+            box_y0 = q_rect.y1 + 8.0
+
+            blocks = page.get_text("blocks")
+            subsequent = [b for b in blocks if b[1] > q_rect.y1 + 6.0 and b[4].strip()]
+            if subsequent:
+                next_y0 = min(b[1] for b in subsequent)
+                box_y1 = max(next_y0 - 6.0, box_y0 + 20.0)
+            else:
+                box_y1 = page.rect.height - 24.0
+
+            box = fitz.Rect(box_x0, box_y0, box_x1, box_y1)
+
+        img_placed = False
+        if image_src:
+            img_path = Path(image_src).expanduser().resolve()
+            if img_path.exists():
+                avail_h = box.height
+                if answer_text:
+                    text_h = min(avail_h * 0.38, 120.0)
+                    t_box = fitz.Rect(box.x0, box.y0, box.x1, box.y0 + text_h)
+                    for fs in [fontsize, fontsize - 1.0, fontsize - 2.0, 7.5]:
+                        if page.insert_textbox(t_box, answer_text, fontsize=fs, fontname=fontname, color=color) >= 0:
+                            break
+                    img_box = fitz.Rect(box.x0 + 10, box.y0 + text_h + 6, box.x1 - 10, box.y1)
+                    page.insert_image(img_box, filename=str(img_path))
+                    img_placed = True
+                else:
+                    img_box = fitz.Rect(box.x0 + 10, box.y0, box.x1 - 10, box.y1)
+                    page.insert_image(img_box, filename=str(img_path))
+                    img_placed = True
+
+        if not img_placed and answer_text:
+            inserted = False
+            for fs in [fontsize, fontsize - 0.5, fontsize - 1.0, fontsize - 1.5, fontsize - 2.0, fontsize - 2.5, 7.0, 6.5]:
+                rc = page.insert_textbox(box, answer_text, fontsize=fs, fontname=fontname, color=color)
+                if rc >= 0:
+                    inserted = True
+                    break
+            if not inserted:
+                page.insert_textbox(box, answer_text, fontsize=6.5, fontname=fontname, color=color)
+
+        filled_count += 1
+
+    return filled_count
+
+
+def fill_lab_manual_questions(
+    template_path: Union[str, Path],
+    answers: Union[List[Dict[str, Any]], Dict[str, Any]],
+    output_path: Union[str, Path],
+    config: Optional[StudentConfig] = None,
+    submission_date: Optional[str] = None,
+    performance_date: Optional[str] = None,
+    stamp_student_info: bool = True,
+) -> Path:
+    """Fill question answers and stamp student rubric credentials directly inside a lab manual PDF.
+
+    Args:
+        template_path: Path to the original teacher lab manual PDF.
+        answers: Questions mapping or list of question specs with answers/diagrams.
+        output_path: Destination path for completed lab manual.
+        config: Optional StudentConfig for stamping cover sheet.
+        submission_date: Optional submission date string.
+        performance_date: Optional performance date string.
+        stamp_student_info: Whether to stamp student credentials on page 0.
+
+    Returns:
+        Resolved Path to the saved, completed lab manual PDF.
+    """
+    t_p = Path(template_path).resolve()
+    if not t_p.exists():
+        raise FileNotFoundError(f"Template PDF not found: {t_p}")
+
+    out_p = Path(output_path).resolve()
+    out_p.parent.mkdir(parents=True, exist_ok=True)
+
+    doc = fitz.open(str(t_p))
+    try:
+        if stamp_student_info and config and len(doc) > 0:
+            smart_fill_rubric_fields(
+                doc[0],
+                config,
+                submission_date=submission_date,
+                performance_date=performance_date,
+            )
+
+        fill_lab_manual_questions_doc(doc, answers)
+        doc.save(str(out_p))
+        return out_p
+    finally:
+        doc.close()
+
+
 def augment_teacher_template(
     template_pdf_path: Optional[Union[str, Path]] = None,
     solution_pdf_path: Optional[Union[str, Path]] = None,
@@ -742,6 +923,7 @@ def augment_teacher_template(
     *,
     template_path: Optional[Union[str, Path]] = None,
     solution_sections: Optional[List[Any]] = None,
+    in_place_answers: Optional[Union[List[Dict[str, Any]], Dict[str, Any]]] = None,
     config: Optional[StudentConfig] = None,
     assignment_meta: Optional[Dict[str, Any]] = None,
     stamp_student_info: bool = True,
@@ -750,15 +932,21 @@ def augment_teacher_template(
 
     Args:
         template_pdf_path: Path to the existing teacher template PDF.
-        solution_pdf_path: Path to the generated solution PDF.
+        solution_pdf_path: Optional path to the generated solution PDF.
         output_path: Destination path for the merged PDF.
+        template_path: Keyword alias for template_pdf_path.
+        solution_sections: Optional list of ReportLab Flowable sections for continuation pages.
+        in_place_answers: Optional answers to fill directly inside the template questions.
+        config: Optional StudentConfig for stamping student credentials.
+        assignment_meta: Optional metadata dictionary.
+        stamp_student_info: Whether to stamp student credentials on page 0.
 
     Returns:
-        Resolved Path to the merged PDF document.
+        Resolved Path to the saved PDF document.
 
     Raises:
-        FileNotFoundError: If template_pdf_path or solution_pdf_path does not exist.
-        ValueError: If either PDF file cannot be opened or is corrupted.
+        FileNotFoundError: If template_pdf_path does not exist.
+        ValueError: If PDF file cannot be opened or is corrupted.
     """
     actual_template = template_pdf_path or template_path
     if not actual_template:
@@ -789,13 +977,6 @@ def augment_teacher_template(
     else:
         actual_solution = solution_pdf_path
 
-    if not actual_solution:
-        raise ValueError("Either solution_pdf_path or solution_sections must be provided")
-
-    s_path = Path(actual_solution).resolve()
-    if not s_path.exists():
-        raise FileNotFoundError(f"Solution PDF not found: {s_path}")
-
     t_doc = None
     s_doc = None
     merged_doc = None
@@ -818,15 +999,29 @@ def augment_teacher_template(
                     color=(0.25, 0.3, 0.4),
                 )
 
-        try:
-            s_doc = fitz.open(str(s_path))
-        except Exception as exc:
-            raise ValueError(f"Failed to open PDF solution file '{s_path}': {exc}") from exc
+        # Fill in-place questions inside the template if provided
+        if in_place_answers:
+            fill_lab_manual_questions_doc(t_doc, in_place_answers)
 
-        merged_doc = fitz.open()
-        merged_doc.insert_pdf(t_doc)
-        merged_doc.insert_pdf(s_doc)
-        merged_doc.save(str(out_p))
+        # If continuation solution pages exist, merge them after the template
+        if actual_solution:
+            s_path = Path(actual_solution).resolve()
+            if not s_path.exists():
+                raise FileNotFoundError(f"Solution PDF not found: {s_path}")
+
+            try:
+                s_doc = fitz.open(str(s_path))
+            except Exception as exc:
+                raise ValueError(f"Failed to open PDF solution file '{s_path}': {exc}") from exc
+
+            merged_doc = fitz.open()
+            merged_doc.insert_pdf(t_doc)
+            merged_doc.insert_pdf(s_doc)
+            merged_doc.save(str(out_p))
+        else:
+            # Standalone completed template with in-place answers and rubric stamping
+            t_doc.save(str(out_p))
+
         return out_p
     finally:
         if t_doc:

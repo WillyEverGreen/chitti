@@ -447,6 +447,22 @@ def cmd_build(args: argparse.Namespace) -> int:
         "title": assignment_title,
     }
 
+    in_place_answers = None
+    if getattr(args, "answers_file", None):
+        ans_f = Path(args.answers_file).expanduser().resolve()
+        if ans_f.exists():
+            try:
+                in_place_answers = json.loads(ans_f.read_text(encoding="utf-8"))
+            except Exception as e:
+                print(f"[!] Warning: Could not parse answers file {ans_f}: {e}")
+        else:
+            print(f"[!] Warning: Answers file not found: {ans_f}")
+    elif getattr(args, "answers", None):
+        try:
+            in_place_answers = json.loads(args.answers)
+        except Exception as e:
+            print(f"[!] Warning: Could not parse --answers JSON string: {e}")
+
     if getattr(args, "mode", "scratch") == "personalize" or (args.template and (getattr(args, "old_name", None) or getattr(args, "old_roll", None))):
         template_path = Path(args.template).expanduser().resolve()
         if not template_path.exists():
@@ -464,10 +480,19 @@ def cmd_build(args: argparse.Namespace) -> int:
         if not template_path.exists():
             print(f"[!] Teacher template PDF not found: {template_path}")
             return 1
+
+        has_custom_solution = bool(
+            getattr(args, "code", None)
+            or getattr(args, "proof", None)
+            or getattr(args, "theory", None)
+            or getattr(args, "sections_file", None)
+        )
+
         augment_teacher_template(
             template_path=template_path,
             output_path=temp_pdf_out,
-            solution_sections=sections,
+            solution_sections=sections if has_custom_solution else None,
+            in_place_answers=in_place_answers,
             config=config,
             assignment_meta=assignment_meta,
         )
@@ -587,12 +612,34 @@ def cmd_attach_proof(args: argparse.Namespace) -> int:
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tf:
         temp_pdf_out = Path(tf.name)
 
-    build_report_pdf(
-        output_path=temp_pdf_out,
-        assignment_meta={"course": course_name, "title": assignment_title},
-        sections=sections,
-        config=config,
-    )
+    existing_pdf = staged_dir / "final_submission.pdf"
+    if existing_pdf.exists():
+        # Preserve existing lab manual / deliverable and append proof page
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tf_proof:
+            proof_page_pdf = Path(tf_proof.name)
+        build_report_pdf(
+            output_path=proof_page_pdf,
+            assignment_meta={"course": course_name, "title": assignment_title},
+            sections=sections,
+            config=config,
+        )
+        augment_teacher_template(
+            template_path=existing_pdf,
+            solution_pdf_path=proof_page_pdf,
+            output_path=temp_pdf_out,
+            stamp_student_info=False,
+        )
+        try:
+            proof_page_pdf.unlink()
+        except Exception:
+            pass
+    else:
+        build_report_pdf(
+            output_path=temp_pdf_out,
+            assignment_meta={"course": course_name, "title": assignment_title},
+            sections=sections,
+            config=config,
+        )
 
     deliverable = stage_deliverable(
         output_root=output_root,
@@ -1144,6 +1191,8 @@ Quick Workflow Guide:
     build_parser.add_argument("--old-roll", help="Old roll number to redact in personalize mode", default=None)
     build_parser.add_argument("--code", help="Path to source code file to embed in report", default=None)
     build_parser.add_argument("--theory", help="Theory text or file path to embed in report", default=None)
+    build_parser.add_argument("--answers", help="JSON string mapping questions to answers for in-place manual filling", default=None)
+    build_parser.add_argument("--answers-file", help="Path to JSON file mapping questions to answers for in-place manual filling", default=None)
     build_parser.add_argument("--sections-file", help="Path to JSON file containing structured flowable sections", default=None)
     build_parser.add_argument("--proof", help="Path to authentic terminal screenshot or observation photo", default=None)
     build_parser.add_argument("--proof-caption", help="Caption describing the proof figure", default=None)

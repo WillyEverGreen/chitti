@@ -21,6 +21,8 @@ from classroom.pdf_engine import (
     build_report_pdf,
     augment_teacher_template,
     smart_fill_rubric_fields,
+    fill_lab_manual_questions,
+    fill_lab_manual_questions_doc,
     overlay_on_template_page,
     personalize_reference_pdf,
 )
@@ -60,6 +62,9 @@ __all__ = [
     "NumberedCanvas",
     "build_report_pdf",
     "augment_teacher_template",
+    "smart_fill_rubric_fields",
+    "fill_lab_manual_questions",
+    "fill_lab_manual_questions_doc",
     "overlay_on_template_page",
     "personalize_reference_pdf",
     "RequirementItem",

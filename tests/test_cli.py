@@ -1,12 +1,14 @@
 """Unit tests for the Classroom Agent Master CLI (classroom_agent.py)."""
 
 import argparse
+import json
 from pathlib import Path
 import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 from PIL import Image
+import pymupdf as fitz
 
 # Ensure project root is on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -494,3 +496,54 @@ def test_build_with_code_theory_and_sections(tmp_path):
     assert "Custom Lab Section" in full_text
     assert "Theoretical analysis of time complexity" in full_text
     assert "def solve():" in full_text
+
+
+def test_build_with_template_and_answers_inplace(tmp_path: Path):
+    """Test CLI build with --template and --answers-file performs in-place filling without extra pages."""
+    cfg_file = tmp_path / "student_config.json"
+    cfg = StudentConfig(
+        student_name="Bob Test",
+        roll_number="CS-9999",
+        department="Computer Engineering",
+        institution="Apex University",
+        output_dir=str(tmp_path / "output"),
+    )
+    save_config(cfg, cfg_file)
+
+    template_pdf = tmp_path / "teacher_manual.pdf"
+    doc = fitz.open()
+    p1 = doc.new_page(width=595, height=842)
+    p1.insert_text((72, 100), "Teacher Lab Manual & Rubric", fontsize=14)
+    p1.insert_text((72, 150), "Name: ________", fontsize=10)
+    p1.insert_text((72, 250), "1. What is TCP/IP protocol suite?", fontsize=10)
+    doc.save(template_pdf)
+    doc.close()
+
+    answers_file = tmp_path / "answers.json"
+    answers_file.write_text(
+        json.dumps({
+            "TCP/IP protocol suite": "TCP/IP is a suite of communication protocols used to interconnect network devices on the internet.",
+        }),
+        encoding="utf-8",
+    )
+
+    ret = classroom_agent.main([
+        "build",
+        "--course", "Computer Networks",
+        "--assignment", "Lab Manual 1",
+        "--template", str(template_pdf),
+        "--answers-file", str(answers_file),
+        "--config-path", str(cfg_file),
+    ])
+    assert ret == 0
+
+    staged_pdf = tmp_path / "output" / "computer_networks" / "lab_manual_1" / "final_submission.pdf"
+    assert staged_pdf.exists()
+
+    out_doc = fitz.open(str(staged_pdf))
+    assert len(out_doc) == 1  # 100% template preservation, no synthetic continuation pages!
+    text = out_doc[0].get_text()
+    assert "Bob Test" in text
+    assert "suite of communication protocols" in text
+    out_doc.close()
+
