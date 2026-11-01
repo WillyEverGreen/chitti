@@ -225,12 +225,20 @@ def download_drive_file(
     target = Path(dest_path).expanduser().resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
 
-    request = drive_service.files().get_media(fileId=file_id)
-    with io.FileIO(target, "wb") as fh:
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while not done:
-            status, done = downloader.next_chunk()
+    try:
+        request = drive_service.files().get_media(fileId=file_id, supportsAllDrives=True)
+        with io.FileIO(target, "wb") as fh:
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while not done:
+                status, done = downloader.next_chunk()
+    except Exception:
+        if target.exists() and target.stat().st_size == 0:
+            try:
+                target.unlink()
+            except OSError:
+                pass
+        raise
 
     return target
 

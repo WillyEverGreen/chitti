@@ -7,6 +7,7 @@ browser submission.
 """
 
 import argparse
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -359,22 +360,51 @@ def cmd_build(args: argparse.Namespace) -> int:
     # Prepare document flowable sections
     sections: List[Dict[str, Any]] = []
 
-    if assignment_desc:
-        sections.append({"type": "heading", "text": "Assignment Description & Objectives"})
-        sections.append({"type": "paragraph", "text": assignment_desc})
-    else:
-        sections.append({"type": "heading", "text": "1. Objective & Scope"})
-        sections.append({
-            "type": "paragraph",
-            "text": f"This submission report fulfills the curriculum requirements for '{assignment_title}' under the course '{course_name}'.",
-        })
-        sections.append({"type": "heading", "text": "2. Implementation & Methodology"})
-        sections.append({
-            "type": "paragraph",
-            "text": "The computational algorithms, experimental methodologies, and analytical steps have been executed and verified in accordance with technical specifications.",
-        })
+    if getattr(args, "sections_file", None):
+        sec_path = Path(args.sections_file).expanduser().resolve()
+        if sec_path.exists():
+            try:
+                with open(sec_path, "r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                    if isinstance(loaded, list):
+                        sections = loaded
+            except Exception as e:
+                print(f"[!] Warning: Could not parse sections file {sec_path}: {e}")
+
+    if not sections:
+        if assignment_desc:
+            sections.append({"type": "heading", "text": "Assignment Description & Objectives"})
+            sections.append({"type": "paragraph", "text": assignment_desc})
+        else:
+            sections.append({"type": "heading", "text": "1. Objective & Scope"})
+            sections.append({
+                "type": "paragraph",
+                "text": f"This submission report fulfills the curriculum requirements for '{assignment_title}' under the course '{course_name}'.",
+            })
+            sections.append({"type": "heading", "text": "2. Implementation & Methodology"})
+            sections.append({
+                "type": "paragraph",
+                "text": "The computational algorithms, experimental methodologies, and analytical steps have been executed and verified in accordance with technical specifications.",
+            })
+
+    if getattr(args, "theory", None):
+        th_p = Path(args.theory).expanduser().resolve()
+        if th_p.is_file():
+            th_text = th_p.read_text(encoding="utf-8")
+        else:
+            th_text = str(args.theory)
+        sections.append({"type": "heading", "text": "Theoretical Background & Principles"})
+        sections.append({"type": "paragraph", "text": th_text})
 
     assets_to_stage: List[Path] = []
+
+    if getattr(args, "code", None):
+        code_p = Path(args.code).expanduser().resolve()
+        if code_p.is_file():
+            code_text = code_p.read_text(encoding="utf-8")
+            sections.append({"type": "heading", "text": f"Source Code Implementation ({code_p.name})"})
+            sections.append({"type": "code", "text": code_text})
+            assets_to_stage.append(code_p)
 
     # Handle proof screenshot if provided
     if args.proof:
@@ -880,25 +910,51 @@ def cmd_materials(args: argparse.Namespace) -> int:
         return 0
 
     downloaded = 0
+    catalog_entries = []
     extract_opt = not args.no_extract
     for mat in materials:
         if "driveFile" in mat:
             df = mat["driveFile"]["driveFile"]
             file_id = df.get("id")
             title = df.get("title", f"material_{file_id}")
+            link = df.get("alternateLink", "")
             dest_file = target_dir / title
+            status_desc = "Link only"
             try:
                 print(f"[*] Downloading Drive material: {title}...")
                 download_drive_file(drive_service, file_id, dest_file)
                 downloaded += 1
+                status_desc = f"Saved ({dest_file.name})"
                 if dest_file.suffix.lower() == ".pdf" and extract_opt:
                     txt_out = target_dir / f"{dest_file.stem}_extracted.txt"
                     extract_pdf_text(dest_file, output_txt_path=txt_out)
                     print(f"    [+] Extracted text: {txt_out.name}")
             except Exception as e:
-                print(f"    [!] Failed to download {title}: {e}")
+                print(f"    [!] Direct download blocked (permissions): {title}")
+                print(f"        Direct web link: {link}")
+            catalog_entries.append((title, link, status_desc))
+        elif "link" in mat:
+            lk = mat["link"]
+            title = lk.get("title", "Web Link")
+            link = lk.get("url", "")
+            catalog_entries.append((title, link, "Web Resource"))
 
-    print(f"\n[OK] Completed! Saved {downloaded} materials into:\n     {target_dir}\n")
+    # Write materials_catalog.md for easy reference
+    if catalog_entries:
+        cat_file = target_dir / "materials_catalog.md"
+        cat_lines = [
+            f"# Materials Catalog: {course_obj.get('name')}\n",
+            f"*Generated by Chitti on {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*\n",
+            "| Title | Type / Status | Web Link |",
+            "|---|---|---|",
+        ]
+        for t, l, s in catalog_entries:
+            link_md = f"[Open Link]({l})" if l else "-"
+            cat_lines.append(f"| {t} | {s} | {link_md} |")
+        cat_file.write_text("\n".join(cat_lines) + "\n", encoding="utf-8")
+        print(f"\n[+] Created materials catalog: {cat_file}")
+
+    print(f"\n[OK] Completed! Saved {downloaded} files into:\n     {target_dir}\n")
     return 0
 
 
@@ -1086,6 +1142,9 @@ Quick Workflow Guide:
     build_parser.add_argument("--mode", choices=["scratch", "template", "personalize"], default="scratch", help="Report compilation strategy")
     build_parser.add_argument("--old-name", help="Old author name to redact in personalize mode", default=None)
     build_parser.add_argument("--old-roll", help="Old roll number to redact in personalize mode", default=None)
+    build_parser.add_argument("--code", help="Path to source code file to embed in report", default=None)
+    build_parser.add_argument("--theory", help="Theory text or file path to embed in report", default=None)
+    build_parser.add_argument("--sections-file", help="Path to JSON file containing structured flowable sections", default=None)
     build_parser.add_argument("--proof", help="Path to authentic terminal screenshot or observation photo", default=None)
     build_parser.add_argument("--proof-caption", help="Caption describing the proof figure", default=None)
     build_parser.add_argument("--output-dir", help="Override output directory", default=None)

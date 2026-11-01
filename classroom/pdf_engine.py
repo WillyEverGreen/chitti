@@ -13,6 +13,7 @@ Provides dual-mode PDF generation:
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+import tempfile
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from PIL import Image

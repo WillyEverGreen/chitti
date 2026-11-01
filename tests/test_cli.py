@@ -446,3 +446,51 @@ def test_build_personalize_mode(tmp_path):
     assert "Sai Balkawade" in text
     assert "10707" in text
     assert "Bob Vance" not in text
+
+
+def test_build_with_code_theory_and_sections(tmp_path):
+    """Test build command with --code, --theory, and --sections-file flags."""
+    import json
+    import pymupdf as fitz
+    out_dir = tmp_path / "out_rich"
+    cfg = StudentConfig(
+        student_name="Test Student",
+        roll_number="99901",
+        output_dir=str(out_dir),
+    )
+    cfg_file = tmp_path / "cfg.json"
+    save_config(cfg, cfg_file)
+
+    code_file = tmp_path / "solution.py"
+    code_file.write_text("def solve():\n    return 42\n", encoding="utf-8")
+
+    theory_file = tmp_path / "theory.txt"
+    theory_file.write_text("Theoretical analysis of time complexity O(N log N).", encoding="utf-8")
+
+    sections_file = tmp_path / "custom_sections.json"
+    sections_file.write_text(json.dumps([
+        {"type": "heading", "text": "Custom Lab Section"},
+        {"type": "paragraph", "text": "This paragraph was loaded from JSON sections file."},
+    ]), encoding="utf-8")
+
+    ret = classroom_agent.main([
+        "build",
+        "--course", "Data Structures",
+        "--assignment", "Lab 1",
+        "--code", str(code_file),
+        "--theory", str(theory_file),
+        "--sections-file", str(sections_file),
+        "--config-path", str(cfg_file),
+    ])
+    assert ret == 0
+
+    staged_pdf = out_dir / "data_structures" / "lab_1" / "final_submission.pdf"
+    assert staged_pdf.exists()
+
+    doc = fitz.open(str(staged_pdf))
+    full_text = "\n".join(page.get_text() for page in doc)
+    doc.close()
+
+    assert "Custom Lab Section" in full_text
+    assert "Theoretical analysis of time complexity" in full_text
+    assert "def solve():" in full_text

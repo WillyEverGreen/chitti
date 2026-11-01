@@ -139,4 +139,4 @@ def test_download_drive_file_mock(tmp_path, monkeypatch):
     res = download_drive_file(mock_drive, "file_12345", dest)
 
     assert res == dest
-    mock_drive.files().get_media.assert_called_once_with(fileId="file_12345")
+    mock_drive.files().get_media.assert_called_once_with(fileId="file_12345", supportsAllDrives=True)

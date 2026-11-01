@@ -238,6 +238,38 @@ def test_augment_teacher_template(tmp_path: Path, sample_config: StudentConfig):
     m_doc.close()
 
 
+def test_augment_teacher_template_with_solution_sections(tmp_path: Path, sample_config: StudentConfig):
+    """Test augmenting teacher template by passing solution_sections directly (auto-compilation)."""
+    teacher_pdf = tmp_path / "rubric_sheet.pdf"
+    t_doc = fitz.open()
+    p1 = t_doc.new_page()
+    p1.insert_text((72, 72), "Teacher Rubric & Grading Criteria", fontsize=14)
+    t_doc.save(teacher_pdf)
+    t_doc.close()
+
+    sol_sections = [
+        {"type": "heading", "text": "Laboratory Findings & Code"},
+        {"type": "paragraph", "text": "Detailed execution summary and test results."},
+        {"type": "code", "text": "print('Convergence verified')"},
+    ]
+    out_pdf = tmp_path / "augmented_with_sections.pdf"
+
+    result_path = augment_teacher_template(
+        template_path=teacher_pdf,
+        output_path=out_pdf,
+        solution_sections=sol_sections,
+        config=sample_config,
+        assignment_meta={"course": "Algorithms", "title": "Lab 5"},
+    )
+
+    assert result_path.exists()
+    doc = fitz.open(result_path)
+    assert len(doc) >= 2
+    assert "Teacher Rubric & Grading Criteria" in doc[0].get_text()
+    assert "Laboratory Findings & Code" in doc[1].get_text()
+    doc.close()
+
+
 def test_overlay_on_template_page(tmp_path: Path):
     """Test overlaying student metadata and answers onto a designated page of a teacher template."""
     template_pdf = tmp_path / "exam_sheet.pdf"
