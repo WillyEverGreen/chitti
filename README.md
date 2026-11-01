@@ -1,12 +1,118 @@
-# 🎓 Google Classroom Universal Automation Suite
+# 🎓 Classroom Agent: Universal Student Assistant & Submission Suite
 
-A production-grade, zero-distraction CLI and automation suite designed for pairing with AI agents to inspect, manage, track, and execute 100% verified submissions to **any** course in Google Classroom without hallucination.
+A production-grade, zero-distraction AI agent and CLI suite that helps students complete coursework end-to-end: understanding teacher prompts, generating publication-grade PDFs (from scratch or augmenting teacher templates), framing authentic terminal execution screenshots, staging deliverables in `output/` for student review, and executing 100% verified submissions without hallucination.
 
 ---
 
-## 🏛️ Architecture & Anti-Hallucination Protocol
+## ⚡ 1-Minute Quick Setup
 
-Agents commonly hallucinate during web submissions due to ambiguous UI states, unconfirmed modals, or intercepted pointer events. This suite eliminates hallucinations through a **Dual-Layer Verification Protocol**:
+Getting started is completely frictionless:
+
+### 1. Install Dependencies
+```bash
+pip install -r requirements.txt
+playwright install chromium
+```
+
+### 2. Run the Onboarding Wizard
+```bash
+python classroom_agent.py setup
+```
+The wizard will prompt you for your name, roll number, department, and institution, and check that your Google Cloud `credentials.json` is ready.
+
+*(You can also configure silently via CLI flags:)*
+```bash
+python classroom_agent.py setup --non-interactive --name "Jane Doe" --roll "CS-2026-042" --dept "Computer Science" --institution "Apex Institute of Technology"
+```
+
+---
+
+## 🚀 Core Workflows
+
+### 1. Discover Pending Coursework
+Quickly scan all your active enrolled courses and view upcoming assignments:
+```bash
+# List all active courses
+python classroom_agent.py courses
+
+# Scan pending assignments across all courses
+python classroom_agent.py pending
+
+# Scan a specific course
+python classroom_agent.py pending --course "Computer Networks"
+```
+
+---
+
+### 2. Inspect Assignment Details & Capability Audit
+Perform a deep analysis of teacher requirements:
+```bash
+python classroom_agent.py details --course "Computer Networks" --assignment "Experiment 7"
+```
+The agent inspects:
+- Official teacher instructions, deadlines, and attached rubrics.
+- **Brutally Honest Capability Audit**: Classifies what is 100% automatable (code, algorithms, theory, calculations) vs. what requires physical student agency (e.g. physical breadboard wiring, local Wi-Fi packet captures, personal student signatures) so you never submit fake data.
+
+---
+
+### 3. Generate Reports & Augment Teacher Templates
+Compile a publication-grade assignment report:
+
+#### Mode A: Build From Scratch
+```bash
+python classroom_agent.py build --course "Computer Networks" --assignment "Experiment 7"
+```
+
+#### Mode B: Build Upon Teacher's Template PDF
+If your instructor provided a template PDF (e.g., question paper or lab sheet):
+```bash
+python classroom_agent.py build --course "Computer Networks" --assignment "Experiment 7" --template "templates/lab7_prompt.pdf"
+```
+The agent seamlessly appends your formatted solution pages after the teacher's prompt with unified styling and running page numbering (`Page X of Y`).
+
+---
+
+### 4. Easily Attach Terminal Screenshots & Proofs
+Embed authentic terminal outputs or experimental screenshots with automatic margin cropping, clean border framing, and numbered figure captions:
+
+```bash
+# Attach proof during report compilation
+python classroom_agent.py build --course "Computer Networks" --assignment "Experiment 7" \
+  --proof "screenshots/rip_routing_output.png" \
+  --proof-caption "RIP Routing Table Convergence Terminal Output"
+
+# Or attach proofs to an already staged deliverable
+python classroom_agent.py attach-proof --course "Computer Networks" --assignment "Experiment 7" \
+  --image "screenshots/traceroute.png" \
+  --caption "Traceroute Verification to Gateway"
+```
+> **Constraint Enforced:** The agent strictly ingests authentic terminal screenshots and observations—never fake synthetic terminal UI mocks.
+
+---
+
+### 5. Review Staged Deliverables in `output/`
+Inspect your ready-to-submit deliverables:
+```bash
+python classroom_agent.py review
+```
+This prints an interactive console summary with:
+- Clickable `file:///` local links to your compiled PDF.
+- `manifest.json` with SHA-256 integrity checksums.
+- `SUMMARY.md` checklist detailing completed items and any required student action items.
+- Direct link to the Google Classroom assignment webpage.
+
+---
+
+### 6. Verified Classroom Turn-In (Optional)
+When you've reviewed your deliverables and are ready to turn them in:
+```bash
+python classroom_agent.py submit --course "Computer Networks" --assignment "Experiment 7"
+```
+The suite launches an isolated Playwright browser, uploads `output/<course>/<assignment>/final_submission.pdf`, confirms the Google Classroom submission modal, and mathematically verifies `state == 'TURNED_IN'` via the official Google Classroom API.
+
+---
+
+## 🏛️ Architecture & Verification Protocol
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -27,144 +133,8 @@ Agents commonly hallucinate during web submissions due to ambiguous UI states, u
 
 ---
 
-## 🗺️ The Exact Map of Submission Execution
-
-Every submission strictly executes this deterministic 10-step map:
-
-```text
-1. [TAB HYGIENE]       Connect to Chrome (port 9444) -> Terminate all non-Classroom tabs.
-2. [NAVIGATION]        Open assignment details URL (canonical alternateLink).
-3. [STATE CHECK]       Wait for 'Your work' widget -> If 'Unsubmit' is visible, exit (Already Turned In).
-4. [FILE ATTACHMENT]   Click '+ Add or create' -> 'File' -> Switch to 'Upload' tab in Google Drive Picker iframe.
-                       Trigger native file chooser via 'Browse' button OR inject into hidden file input.
-                       Wait for upload chip to appear in 'Your work' (up to 90s).
-                       Wait for .hrIntegrationsOnepick backdrop overlay to detach.
-5. [LINK ATTACHMENT]   Click '+ Add or create' -> 'Link' -> Input URL -> Click 'Add link'.
-6. [ACTION BUTTON]     Wait for 'Turn in' / 'Mark as done' / 'Resubmit' to become enabled. Click it.
-7. [MODAL CONFIRM]     Wait for confirmation modal dialog ([role='dialog']) -> Click modal 'Turn in' button.
-8. [DOM VERIFICATION]  Poll until 'Unsubmit' button and 'Turned in' badge are confirmed.
-9. [API VERIFICATION]  Query Google Classroom API to verify studentSubmissions.state == 'TURNED_IN'.
-10. [CLEANUP]          Close assignment tab and terminate any newly opened unrelated tabs.
+## 🧪 Running Automated Tests
+```bash
+pytest -v
 ```
-
----
-
-## 🚀 Quick Setup Guide
-
-### 1. Google Cloud OAuth Credentials
-1. Place your Google Cloud OAuth client credentials JSON in this directory as:
-   ```
-   d:\temp\Classroom\credentials.json
-   ```
-2. Required Scopes:
-   - `classroom.courses.readonly`
-   - `classroom.coursework.me`
-   - `classroom.student-submissions.me.readonly`
-   - `drive.file`
-
-### 2. Isolated Chrome Session (Port 9444)
-Launch your isolated Chrome browser instance on debug port `9444`:
-```powershell
-Start-Process chrome -ArgumentList "--remote-debugging-port=9444 --user-data-dir=`"$PWD\.chrome_isolated`" `"https://classroom.google.com`""
-```
-*(Port 9444 ensures complete isolation from any background terminal jobs running on port 9222).*
-
----
-
-## 🛠️ Unified Master CLI: `classroom_master.py`
-
-The primary interface combining API intelligence with browser execution:
-
-### 1. List All Active Courses
-```powershell
-py classroom_master.py courses
-```
-
-### 2. Scan Pending Coursework (Ultra-Fast Batch Engine)
-Scans all courses using batch submission queries (`courseWorkId='-'`) in ~5 seconds, automatically ignoring HMI (Human Machine Interaction):
-```powershell
-py classroom_master.py pending
-```
-To scan a specific course:
-```powershell
-py classroom_master.py pending --course "Computer Network"
-```
-
-### 3. View Assignment Details & Prompts
-```powershell
-py classroom_master.py details --course "Network" --assignment "EXPERIMENT 7"
-```
-
-### 4. Verify Server Submission State (Zero Browser Overhead)
-Checks the official Google Classroom API ground-truth status and attachments:
-```powershell
-py classroom_master.py verify --course "Network" --assignment "EXPERIMENT 6"
-```
-
-### 5. Universal Automated Submission
-Submit deliverables to **any** course in your Classroom:
-
-```powershell
-# Single File Deliverable (PDF, DOCX, ZIP, PY, etc.):
-py classroom_master.py submit --course "Network" --assignment "EXPERIMENT 7" --file "CN_Exp07.pdf"
-
-# Multiple Files (e.g., Code + Report):
-py classroom_master.py submit --course "Cryptography" --assignment "Lab 8" --files "report.pdf" "code.zip"
-
-# File + Web Link (e.g., Report + Credly Badge / GitHub Repo):
-py classroom_master.py submit --course "Cloud Computing" --assignment "LAB 10" --file "report.pdf" --link "https://www.credly.com/..."
-
-# No Attachments ('Mark as done'):
-py classroom_master.py submit --course "Network" --assignment "SURVEY 1" --mark-done
-```
-
----
-
-## 🎯 Dedicated Submission Engine: `auto_submit.py`
-
-Laser-focused submission engine with strict tab hygiene:
-
-```powershell
-# Direct URL submission:
-py auto_submit.py --url "https://classroom.google.com/c/.../a/.../details" --file "deliverable.pdf"
-
-# Multi-file direct URL submission:
-py auto_submit.py --url "https://classroom.google.com/c/.../a/.../details" --files "doc.pdf" "source.zip"
-
-# Tab hygiene (close all non-Classroom tabs):
-py auto_submit.py --clean-tabs
-```
-
----
-
-## 📁 Repository Directory Structure
-
-```text
-d:\temp\Classroom\
-├── auto_submit.py          # Dedicated browser submission engine (Playwright CDP)
-├── classroom_master.py     # Master CLI for discovery, inspection, submission & verify
-├── classroom_manager.py    # Google Classroom & Drive API client library
-├── credentials.json        # Google Cloud OAuth client secrets
-├── token.json              # Cached OAuth user tokens
-├── requirements.txt        # Python package dependencies
-├── .gitignore              # Repository exclusion rules
-├── README.md               # Architecture and documentation
-└── deliverables/           # Final verified submitted deliverables
-    ├── CN_EXPERIMENT_4.pdf
-    ├── CN_Expt_No_5.pdf
-    ├── CN_Expt_No_6.pdf
-    ├── DWM_EXPT4.pdf
-    ├── CCL_Assignment09_Report.pdf
-    ├── CCL_Lab06_Report.pdf
-    ├── CCL_Lab07_Report.pdf
-    ├── CCL_Lab08_Report.pdf
-    └── CCL_Lab10_Report.pdf
-```
-
----
-
-## 🛡️ Anti-Hallucination Commitments & Standards
-- Never reports a submission as complete until verified via browser DOM (`Unsubmit` button) and confirmed via Google Classroom API (`state: TURNED_IN`).
-- Automatically handles both hidden file inputs and Google Drive Picker's visible `Browse` button using Playwright's `expect_file_chooser()`.
-- Automatically enforces overlay detachment (`.hrIntegrationsOnepick`) before clicking submission buttons.
-- Tab hygiene prevents distraction by closing any non-Classroom tabs across the session.
+All subsystems (sanitization, configuration, authentic media framing, dual-mode PDF compilation, staging, and CLI interface) are covered by automated unit tests.

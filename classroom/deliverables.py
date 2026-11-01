@@ -133,8 +133,12 @@ _STUDENT_ACTION_RULES = [
 
 
 def audit_assignment_requirements(
-    prompt_text: str,
+    prompt_text: str = "",
     attached_files: Optional[List[str]] = None,
+    *,
+    instructions: Optional[str] = None,
+    assignment_title: Optional[str] = None,
+    materials: Optional[List[Any]] = None,
 ) -> RequirementAudit:
     """Performs a capability audit on an assignment prompt.
 
@@ -146,10 +150,19 @@ def audit_assignment_requirements(
     Args:
         prompt_text: Raw instruction text, prompt, or rubric of the assignment.
         attached_files: List of file names or paths actually attached to the assignment.
+        instructions: Optional alias for prompt_text.
+        assignment_title: Optional assignment title if prompt_text is empty.
+        materials: Optional materials list.
 
     Returns:
         RequirementAudit containing categorized tasks, action items, and blockers.
     """
+    if instructions and not prompt_text:
+        prompt_text = instructions
+    if assignment_title and not prompt_text:
+        prompt_text = assignment_title
+    if materials and not attached_files:
+        attached_files = [str(m) for m in materials]
     if not prompt_text or not prompt_text.strip():
         return RequirementAudit(
             automated_tasks=[],
