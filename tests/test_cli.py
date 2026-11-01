@@ -31,11 +31,13 @@ def test_main_parser_help(capsys):
     assert "attach-proof" in captured.out
     assert "review" in captured.out
     assert "submit" in captured.out
+    assert "notes" in captured.out
+    assert "materials" in captured.out
 
 
 @pytest.mark.parametrize(
     "subcommand",
-    ["setup", "courses", "pending", "details", "build", "attach-proof", "review", "submit"],
+    ["setup", "courses", "pending", "details", "build", "attach-proof", "review", "submit", "notes", "materials"],
 )
 def test_subcommand_helps(subcommand, capsys):
     """Verify each subcommand provides standard --help output."""
@@ -329,3 +331,55 @@ def test_handle_classroom_error_branches(capsys):
     assert ret == 1
     out = capsys.readouterr().out
     assert "College Organization Policy" in out
+
+
+def test_notes_command_dispatch(tmp_path):
+    """Test notes subcommand creates notes.md and notes.pdf in course workspace."""
+    out_dir = tmp_path / "notes_output"
+    cfg = StudentConfig(output_dir=str(out_dir))
+    cfg_file = tmp_path / "cfg.json"
+    save_config(cfg, cfg_file)
+
+    ret = classroom_agent.main([
+        "notes",
+        "--course", "Computer Networks",
+        "--topic", "TCP Three-Way Handshake",
+        "--theory", "SYN, SYN-ACK, ACK establishes reliable transmission.",
+        "--formulas", "RTT = 2 * Propagation Delay",
+        "--config-path", str(cfg_file),
+    ])
+    assert ret == 0
+
+    expected_md = out_dir / "computer_networks" / "notes" / "tcp_three_way_handshake" / "notes.md"
+    expected_pdf = out_dir / "computer_networks" / "notes" / "tcp_three_way_handshake" / "notes.pdf"
+    assert expected_md.exists()
+    assert expected_pdf.exists()
+    assert "SYN, SYN-ACK, ACK" in expected_md.read_text(encoding="utf-8")
+
+
+def test_materials_command_local_pdf(tmp_path):
+    """Test materials subcommand with local PDF extracts text into course workspace."""
+    import pymupdf as fitz
+    out_dir = tmp_path / "mat_output"
+    cfg = StudentConfig(output_dir=str(out_dir))
+    cfg_file = tmp_path / "cfg.json"
+    save_config(cfg, cfg_file)
+
+    sample_pdf = tmp_path / "lab_instructions.pdf"
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((50, 50), "Important: Complete all Wireshark captures before Monday.")
+    doc.save(str(sample_pdf))
+    doc.close()
+
+    ret = classroom_agent.main([
+        "materials",
+        "--course", "Computer Networks",
+        "--file", str(sample_pdf),
+        "--config-path", str(cfg_file),
+    ])
+    assert ret == 0
+
+    expected_txt = out_dir / "computer_networks" / "materials" / "lab_instructions_extracted.txt"
+    assert expected_txt.exists()
+    assert "Wireshark" in expected_txt.read_text(encoding="utf-8")

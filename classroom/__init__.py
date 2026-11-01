@@ -32,6 +32,14 @@ from classroom.deliverables import (
     compute_sha256,
 )
 
+from classroom.workspace import (
+    CourseWorkspace,
+    get_course_workspace,
+    extract_pdf_text,
+    save_study_notes,
+    download_drive_file,
+)
+
 __version__ = "1.0.0"
 
 __all__ = [
@@ -58,5 +66,10 @@ __all__ = [
     "stage_deliverable",
     "print_completion_card",
     "compute_sha256",
+    "CourseWorkspace",
+    "get_course_workspace",
+    "extract_pdf_text",
+    "save_study_notes",
+    "download_drive_file",
     "__version__",
 ]

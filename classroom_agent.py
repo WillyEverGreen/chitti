@@ -25,12 +25,14 @@ try:
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
+    from rich.text import Text
     from rich import print as rprint
     console = Console()
     HAS_RICH = True
 except ImportError:
     HAS_RICH = False
     console = None
+    Text = None
 
 from classroom.config import (
     StudentConfig,
@@ -54,6 +56,13 @@ from classroom.media_processor import (
 from classroom.pdf_engine import (
     augment_teacher_template,
     build_report_pdf,
+)
+from classroom.workspace import (
+    CourseWorkspace,
+    get_course_workspace,
+    extract_pdf_text,
+    save_study_notes,
+    download_drive_file,
 )
 import classroom_manager
 import classroom_master
@@ -689,6 +698,10 @@ def cmd_submit(args: argparse.Namespace) -> int:
         course_slug = slugify(args.course) or "course"
         assignment_slug = slugify(args.assignment) or "assignment"
         staged_pdf = output_root / course_slug / assignment_slug / "final_submission.pdf"
+        if not staged_pdf.exists():
+            alt_pdf = output_root / course_slug / "assignments" / assignment_slug / "final_submission.pdf"
+            if alt_pdf.exists():
+                staged_pdf = alt_pdf
 
         if staged_pdf.exists():
             print(f"[*] Auto-detected staged deliverable: {staged_pdf}")
@@ -708,6 +721,144 @@ def cmd_submit(args: argparse.Namespace) -> int:
         keep_tab=args.keep_tab,
     )
     return 0 if success else 1
+
+
+# =====================================================================
+# Command: notes
+# =====================================================================
+
+def cmd_notes(args: argparse.Namespace) -> int:
+    """Generate structured study notes, revision sheets, and publication PDF."""
+    config, _ = _load_student_config(args.config_path)
+    output_root = Path(config.output_dir).expanduser().resolve()
+    ws = get_course_workspace(output_root, args.course)
+
+    theory_text = (args.theory or "").strip()
+    if args.file:
+        f_path = Path(args.file).expanduser().resolve()
+        if not f_path.exists():
+            print(f"[!] Specified file not found: {f_path}")
+            return 1
+        file_content = f_path.read_text(encoding="utf-8")
+        if theory_text:
+            theory_text = f"{theory_text}\n\n{file_content}"
+        else:
+            theory_text = file_content
+
+    if not theory_text:
+        theory_text = f"Study notes and core conceptual summary for {args.topic}."
+
+    compile_pdf = not args.no_pdf
+    res = save_study_notes(
+        workspace=ws,
+        config=config,
+        topic=args.topic,
+        theory=theory_text,
+        formulas=args.formulas,
+        compile_pdf=compile_pdf,
+    )
+
+    md_path = res["markdown"]
+    pdf_path = res.get("pdf")
+
+    if HAS_RICH and console:
+        panel_content = Text()
+        panel_content.append("📚 Academic Study Notes Created\n\n", style="bold green")
+        panel_content.append(f"Course:    {ws.course_name}\n", style="cyan")
+        panel_content.append(f"Topic:     {args.topic}\n", style="white")
+        panel_content.append(f"Markdown:  {md_path}\n", style="yellow")
+        if compile_pdf and pdf_path and pdf_path.exists():
+            panel_content.append(f"PDF Sheet: {pdf_path}\n", style="bold magenta")
+        console.print(Panel(panel_content, border_style="green", expand=False))
+    else:
+        print("\n" + "=" * 50)
+        print("📚 Academic Study Notes Created")
+        print("=" * 50)
+        print(f"Course:    {ws.course_name}")
+        print(f"Topic:     {args.topic}")
+        print(f"Markdown:  {md_path}")
+        if compile_pdf and pdf_path and pdf_path.exists():
+            print(f"PDF Sheet: {pdf_path}")
+        print("=" * 50 + "\n")
+
+    return 0
+
+
+# =====================================================================
+# Command: materials
+# =====================================================================
+
+def cmd_materials(args: argparse.Namespace) -> int:
+    """Download teacher materials and extract PDF text into course workspace."""
+    config, _ = _load_student_config(args.config_path)
+    output_root = Path(config.output_dir).expanduser().resolve()
+    ws = get_course_workspace(output_root, args.course)
+
+    # Local PDF text extraction
+    if args.file:
+        local_f = Path(args.file).expanduser().resolve()
+        if not local_f.exists():
+            print(f"[!] File not found: {local_f}")
+            return 1
+        out_txt = ws.materials_dir / f"{local_f.stem}_extracted.txt"
+        extracted = extract_pdf_text(local_f, output_txt_path=out_txt)
+        print(f"\n[+] Extracted text from {local_f.name} -> {out_txt}")
+        print(f"    Total Characters: {len(extracted)}")
+        return 0
+
+    # Classroom sync
+    try:
+        classroom_service, drive_service = classroom_manager.get_services()
+    except Exception as exc:
+        return handle_classroom_error(exc)
+
+    course_obj = classroom_master.find_course(classroom_service, args.course)
+    if not course_obj:
+        print(f"[!] Course matching '{args.course}' not found.")
+        return 1
+
+    course_id = str(course_obj["id"])
+    target_dir = ws.materials_dir
+    if args.assignment:
+        cw = classroom_master.find_coursework(classroom_service, course_id, args.assignment)
+        if not cw:
+            print(f"[!] Assignment '{args.assignment}' not found in {course_obj.get('name')}.")
+            return 1
+        target_dir = ws.get_assignment_dir(args.assignment) / "materials"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        materials = cw.get("materials", [])
+    else:
+        # Fetch coursework to list materials
+        cw_list = classroom_service.courses().courseWork().list(courseId=course_id, pageSize=20).execute().get("courseWork", [])
+        materials = []
+        for c in cw_list:
+            materials.extend(c.get("materials", []))
+
+    if not materials:
+        print(f"[*] No attached files or materials found for {args.course}.")
+        return 0
+
+    downloaded = 0
+    extract_opt = not args.no_extract
+    for mat in materials:
+        if "driveFile" in mat:
+            df = mat["driveFile"]["driveFile"]
+            file_id = df.get("id")
+            title = df.get("title", f"material_{file_id}")
+            dest_file = target_dir / title
+            try:
+                print(f"[*] Downloading Drive material: {title}...")
+                download_drive_file(drive_service, file_id, dest_file)
+                downloaded += 1
+                if dest_file.suffix.lower() == ".pdf" and extract_opt:
+                    txt_out = target_dir / f"{dest_file.stem}_extracted.txt"
+                    extract_pdf_text(dest_file, output_txt_path=txt_out)
+                    print(f"    [+] Extracted text: {txt_out.name}")
+            except Exception as e:
+                print(f"    [!] Failed to download {title}: {e}")
+
+    print(f"\n[OK] Completed! Saved {downloaded} materials into:\n     {target_dir}\n")
+    return 0
 
 
 # =====================================================================
@@ -805,6 +956,30 @@ Quick Workflow Guide:
     submit_parser.add_argument("--port", type=int, help="Chrome Remote Debugging port (default: 9444)", default=None)
     submit_parser.add_argument("--config-path", help="Path to student_config.json", default=None)
 
+    # Command: notes
+    notes_parser = subparsers.add_parser(
+        "notes",
+        help="Generate structured study notes, revision sheets, and publication PDF",
+    )
+    notes_parser.add_argument("--course", required=True, help="Course name or ID")
+    notes_parser.add_argument("--topic", required=True, help="Topic title (e.g. 'TCP Handshake', 'CPU Scheduling')")
+    notes_parser.add_argument("--theory", help="Core theoretical concepts or summary", default="")
+    notes_parser.add_argument("--formulas", help="Key formulas, equations, or code snippets", default=None)
+    notes_parser.add_argument("--file", help="Path to markdown/text file containing notes content", default=None)
+    notes_parser.add_argument("--no-pdf", action="store_true", help="Only save Markdown note, skip PDF compilation")
+    notes_parser.add_argument("--config-path", help="Path to student_config.json", default=None)
+
+    # Command: materials
+    mat_parser = subparsers.add_parser(
+        "materials",
+        help="Download teacher materials and extract PDF text into course workspace",
+    )
+    mat_parser.add_argument("--course", required=True, help="Course name or ID")
+    mat_parser.add_argument("--assignment", help="Optional assignment title to fetch specific assignment materials", default=None)
+    mat_parser.add_argument("--file", help="Path to a local teacher PDF to extract text into workspace", default=None)
+    mat_parser.add_argument("--no-extract", action="store_true", help="Skip automatic PDF text extraction")
+    mat_parser.add_argument("--config-path", help="Path to student_config.json", default=None)
+
     return parser
 
 
@@ -842,6 +1017,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_review(args)
     elif args.command == "submit":
         return cmd_submit(args)
+    elif args.command == "notes":
+        return cmd_notes(args)
+    elif args.command == "materials":
+        return cmd_materials(args)
     else:
         parser.print_help()
         return 1
