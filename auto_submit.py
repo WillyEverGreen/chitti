@@ -48,7 +48,11 @@ def clean_unrelated_tabs(browser: Browser, current_url: Optional[str] = None) ->
     ]
 
     for ctx in browser.contexts:
-        for page in list(ctx.pages):
+        pages = list(ctx.pages)
+        for page in pages:
+            # Never close if it's the only page left in context
+            if len(ctx.pages) <= 1:
+                break
             try:
                 url = page.url.strip()
                 # If page is not in allowed domains, close it immediately
@@ -236,7 +240,10 @@ def execute_submission(
         clean_unrelated_tabs(browser)
 
         context = browser.contexts[0]
-        page = context.new_page()
+        if context.pages:
+            page = context.pages[0]
+        else:
+            page = context.new_page()
 
         try:
             print(f"\n[Step 1/6] Navigating to assignment page...")
@@ -275,88 +282,63 @@ def execute_submission(
                     continue
 
                 print(f"[*] Opening 'Add or create' menu...")
-                add_btn = page.locator("button, div[role='button']").filter(has_text="Add or create").locator("visible=true").first
-                if add_btn.count() == 0:
-                    print(f"[!] Error: 'Add or create' button not found on page.")
-                    page.close()
-                    return False
-
-                add_btn.click()
-                page.wait_for_timeout(1000)
-
-                file_option = page.locator("[role='menuitem']:visible").filter(has_text="File").first
-                if file_option.count() == 0:
-                    print(f"[!] Error: 'File' menu item not found.")
-                    page.close()
-                    return False
-
-                file_option.click()
-                print(f"[*] Waiting for Google Drive Picker...")
-
-                # Wait for Google Drive Picker iframe
-                picker = None
-                for _ in range(30):
-                    for f in page.frames:
-                        if "picker" in f.url:
-                            picker = f
-                            break
-                    if picker:
+                add_btns = page.locator("button, div[role='button']").filter(has_text="Add or create")
+                clicked_add = False
+                for i in range(add_btns.count()):
+                    if add_btns.nth(i).is_visible():
+                        add_btns.nth(i).click()
+                        clicked_add = True
                         break
-                    page.wait_for_timeout(400)
-
-                if not picker:
-                    print(f"[!] Error: Google Drive Picker frame did not load.")
-                    page.close()
+                if not clicked_add:
+                    print(f"[!] Error: Visible 'Add or create' button not found.")
                     return False
 
-                # Switch to Upload tab if available
-                upload_tab = picker.locator("[role='tab']").filter(has_text="Upload").first
-                if upload_tab.is_visible():
-                    upload_tab.click()
-                    page.wait_for_timeout(800)
+                page.wait_for_timeout(1500)
 
-                # Upload file using native Browse button file chooser or hidden input
-                browse_btn = picker.locator("button:visible, div[role='button']:visible").filter(has_text="Browse").first
-                if browse_btn.count() > 0 and browse_btn.is_visible():
-                    print(f"[*] Found 'Browse' button. Triggering native file chooser for '{filename}'...")
-                    with page.expect_file_chooser() as fc_info:
-                        browse_btn.click()
-                    fc = fc_info.value
-                    fc.set_files(abs_path)
-                    print(f"[+] File chosen via file chooser. Uploading...")
+                # Locate and click File option
+                file_opts = page.locator("[role='menuitem']:visible").filter(has_text="File")
+                if file_opts.count() > 0:
+                    file_opts.first.click(force=True)
                 else:
-                    file_input = picker.locator("input[type='file']")
-                    file_input.set_input_files(abs_path)
-                    print(f"[*] File input set directly. Uploading '{filename}'...")
+                    page.locator("text='File'").locator("visible=true").first.click(force=True)
 
-                # Wait for attachment chip to appear under 'Your work'
+                print(f"[*] Waiting for Google Drive Picker input...")
+                file_input = None
+                for _ in range(35):
+                    page.wait_for_timeout(1000)
+                    for f in page.frames:
+                        inps = f.locator('input[type="file"]')
+                        if inps.count() > 0:
+                            file_input = inps.first
+                            break
+                    if file_input:
+                        break
+                    if page.locator('input[type="file"]').count() > 0:
+                        file_input = page.locator('input[type="file"]').first
+                        break
+
+                if not file_input:
+                    print(f"[!] Error: File input element not found in picker frame.")
+                    return False
+
+                print(f"[*] Uploading '{filename}' via set_input_files...")
+                file_input.set_input_files(abs_path)
+                print(f"[+] File input set. Waiting for upload and processing...")
+
+                # Wait for attachment chip or enabled Turn in button
                 chip_verified = False
-                base_name_no_ext = os.path.splitext(filename)[0]
-                for sec in range(90):  # Wait up to 90s for large files
-                    has_chip = (
-                        page.locator(f"text='{filename}'").count() > 0 or 
-                        page.locator(f"text='{base_name_no_ext}'").count() > 0
-                    )
+                for sec in range(60):
+                    page.wait_for_timeout(1000)
+                    has_chip = page.locator(f"text='{filename}'").count() > 0
                     has_turn_in = page.locator("button:visible, div[role='button']:visible").filter(
                         has_text=re.compile(r"^Turn in$", re.IGNORECASE)
                     ).count() > 0
-
                     if has_chip or has_turn_in:
                         print(f"[+] Attachment upload verified after {sec + 1}s!")
                         chip_verified = True
                         break
-                    page.wait_for_timeout(1000)
 
-                if not chip_verified:
-                    print(f"[!] Warning: Did not see chip within 90s, waiting 5s for UI...")
-                    page.wait_for_timeout(5000)
-
-                # Ensure picker backdrop overlay (.hrIntegrationsOnepick) is fully detached
-                for _ in range(25):
-                    if page.locator(".hrIntegrationsOnepick:visible").count() == 0:
-                        break
-                    page.wait_for_timeout(400)
-                page.wait_for_timeout(1500)
+                page.wait_for_timeout(2000)
 
             # Step 4: Attach Links (Sequential multi-link attachment)
             for idx, lk in enumerate(all_links):
@@ -365,12 +347,15 @@ def execute_submission(
                     print(f"[+] Link already attached.")
                     continue
 
-                add_btn = page.locator("button, div[role='button']").filter(has_text="Add or create").locator("visible=true").first
-                add_btn.click()
-                page.wait_for_timeout(1000)
+                add_btns = page.locator("button, div[role='button']").filter(has_text="Add or create")
+                for i in range(add_btns.count()):
+                    if add_btns.nth(i).is_visible():
+                        add_btns.nth(i).click()
+                        break
+                page.wait_for_timeout(1500)
 
                 link_option = page.locator("[role='menuitem']:visible").filter(has_text="Link").first
-                link_option.click()
+                link_option.click(force=True)
                 page.wait_for_timeout(1000)
 
                 link_input = page.locator("input[type='text']:visible, input[aria-label*='Link']:visible").first
@@ -383,17 +368,11 @@ def execute_submission(
                 page.wait_for_timeout(3500)
 
             # Step 5: Press 'Turn in' / 'Mark as done' / 'Resubmit'
-            print(f"\n[Step 4/6] Locating and activating submission button...")
-            page.wait_for_timeout(2000)
-
-            # If deliverables were provided, prioritize 'Turn in' / 'Resubmit'; otherwise allow 'Mark as done'
-            if all_files:
-                target_regex = r"^(Turn in|Resubmit|Turn in again)$"
-            else:
-                target_regex = r"^(Turn in|Mark as done|Resubmit|Turn in again)$"
-
+            print(f"\n[Step 4/6] Waiting for 'Turn in' button to become active...")
             turn_btn = None
-            for wait_i in range(30):  # Wait up to 15s for button to be enabled
+            target_regex = r"^(Turn in|Resubmit|Turn in again)$" if all_files else r"^(Turn in|Mark as done|Resubmit|Turn in again)$"
+
+            for sec in range(60):
                 candidates = page.locator("button:visible, div[role='button']:visible").filter(
                     has_text=re.compile(target_regex, re.IGNORECASE)
                 )
@@ -406,22 +385,18 @@ def execute_submission(
                             if not is_aria_disabled and cand.is_enabled():
                                 turn_btn = cand
                                 break
-                    if turn_btn:
-                        break
-                page.wait_for_timeout(500)
+                if turn_btn:
+                    print(f"[+] 'Turn in' button is active and ready after {sec + 1}s!")
+                    break
+                page.wait_for_timeout(1000)
 
             if not turn_btn:
                 print(f"[!] Error: Could not locate active 'Turn in' or 'Mark as done' button.")
-                page.close()
                 return False
 
             action_text = turn_btn.inner_text().strip()
             print(f"[*] Clicking main action button: '{action_text}'...")
-            try:
-                turn_btn.click(timeout=8000)
-            except Exception:
-                print(f"[*] Fallback: clicking with force=True...")
-                turn_btn.click(force=True)
+            turn_btn.click(force=True)
             page.wait_for_timeout(1500)
 
             # Step 6: Confirm Modal Dialog
@@ -479,7 +454,7 @@ def execute_submission(
                 if course_id and work_id:
                     print(f" API Server State: {'TURNED_IN (Confirmed)' if api_verified else 'Pending sync'}")
                 print("=" * 68 + "\n")
-                if not keep_tab:
+                if not keep_tab and len(context.pages) > 1:
                     page.close()
                 return True
             else:
