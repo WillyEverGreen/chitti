@@ -123,6 +123,10 @@ def handle_classroom_error(exc: Exception) -> int:
     err_msg = str(exc)
     err_lower = err_msg.lower()
 
+    if "desktop app" in err_lower or "web application" in err_lower:
+        # classroom_manager has already displayed the guided instructions
+        return 1
+
     if "credentials.json" in err_lower:
         print("\n" + "=" * 62)
         print("        🤖 Chitti Helper: Google Credentials Needed           ")

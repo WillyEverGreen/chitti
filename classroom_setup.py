@@ -84,6 +84,15 @@ def check_downloads_for_credentials(dest_path: Path) -> bool:
 
     print(f"\n[+] Auto-detected Google credentials in your Downloads folder:")
     print(f"    Found: {latest.name}")
+    try:
+        with open(latest, "r", encoding="utf-8") as f:
+            cdata = json.load(f)
+        if "web" in cdata and "installed" not in cdata:
+            print("    [!] Warning: This file is a 'Web application' client.")
+            print("        Google will block it with 'Error 400: redirect_uri_mismatch'.")
+            print("        Please create a 'Desktop app' credential instead.")
+    except Exception:
+        pass
     use_dl = prompt_value("Import this file into Chitti automatically? (Y/n)", default="y")
     if use_dl.lower().startswith("y"):
         shutil.copyfile(latest, dest_path)

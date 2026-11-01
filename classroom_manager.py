@@ -5,6 +5,7 @@ Empowers you and your agent to inspect, track, and manage assignments and submis
 
 import os
 import sys
+import json
 import argparse
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
@@ -60,6 +61,30 @@ def get_credentials() -> Credentials:
                     "Please download your OAuth client ID credentials from Google Cloud Console "
                     "and place the JSON file as 'credentials.json' in this folder."
                 )
+            # Check for Desktop app vs Web application
+            try:
+                with open(CREDENTIALS_FILE, 'r', encoding='utf-8') as f:
+                    creds_data = json.load(f)
+                if 'web' in creds_data and 'installed' not in creds_data:
+                    project_id = creds_data.get('web', {}).get('project_id', '')
+                    proj_param = f"?project={project_id}" if project_id else ""
+                    print("\n" + "=" * 68)
+                    print("  ⚠️  Incorrect OAuth Client Type: 'Web application' detected!")
+                    print("=" * 68)
+                    print("Your credentials.json was created as a 'Web application'.")
+                    print("Google restricts Web apps on localhost, causing 'Error 400: redirect_uri_mismatch'")
+                    print("(which is why Google blocks the screen and hides the Advanced button!).\n")
+                    print("👉 Fix in 3 quick clicks (Select 'Desktop app'):")
+                    print(f"1. Open: https://console.cloud.google.com/apis/credentials{proj_param}")
+                    print("2. Click '+ Create credentials' -> 'OAuth client ID'")
+                    print("3. Application type: Select 'Desktop app' (NOT Web application) -> Name: 'Chitti'")
+                    print("4. Click 'Create', then click 'DOWNLOAD JSON'")
+                    print("5. Save it to your Downloads folder, then run: python chitti.py setup\n")
+                    print("=" * 68 + "\n")
+                    raise ValueError("OAuth credentials must be created with Application type 'Desktop app', not 'Web application'.")
+            except (json.JSONDecodeError, OSError):
+                pass
+
             print("\n" + "=" * 64)
             print("        🔑 Chitti: One-Time Google Classroom Authorization      ")
             print("=" * 64)
