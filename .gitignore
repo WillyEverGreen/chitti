@@ -20,6 +20,13 @@ deliverables/*
 *.docx
 *.zip
 
+# Generated student deliverables staging directory
+output/
+
+# Archived legacy scripts and personal coursework helpers
+.legacy_archive/*
+!.legacy_archive/README.md
+
 # Logs and system generated files
 *.log
 .system_generated/

@@ -150,15 +150,15 @@ d:\temp\Classroom\
 ├── .gitignore              # Repository exclusion rules
 ├── README.md               # Architecture and documentation
 └── deliverables/           # Final verified submitted deliverables
-    ├── 10707_CN_EXPERIMENT_4.pdf
-    ├── 10707_CN_Expt_No_5.pdf
-    ├── 10707_CN_Expt_No_6.pdf
-    ├── 10707_DWM_EXPT4.pdf
-    ├── CCL_Assignment09_Sai_Balkawade_10707.pdf
-    ├── CCL_Lab06_Sai_Balkawade_10707.pdf
-    ├── CCL_Lab07_Sai_Balkawade_10707.pdf
-    ├── CCL_Lab08_Sai_Balkawade_10707.pdf
-    └── CCL_Lab10_Sai_Balkawade_10707.pdf
+    ├── CN_EXPERIMENT_4.pdf
+    ├── CN_Expt_No_5.pdf
+    ├── CN_Expt_No_6.pdf
+    ├── DWM_EXPT4.pdf
+    ├── CCL_Assignment09_Report.pdf
+    ├── CCL_Lab06_Report.pdf
+    ├── CCL_Lab07_Report.pdf
+    ├── CCL_Lab08_Report.pdf
+    └── CCL_Lab10_Report.pdf
 ```
 
 ---
