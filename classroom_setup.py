@@ -41,7 +41,7 @@ def prompt_value(prompt: str, default: str = "", required: bool = False) -> str:
 def run_setup(argv: Optional[List[str]] = None) -> int:
     """Run the setup wizard with the provided CLI arguments or sys.argv."""
     parser = argparse.ArgumentParser(
-        description="Classroom Agent Student Setup Wizard",
+        description="Chitti 🤖 Student Setup Wizard",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
@@ -80,7 +80,7 @@ def run_setup(argv: Optional[List[str]] = None) -> int:
         is_interactive = True
 
     print("==========================================================")
-    print("      Classroom Agent - Student Setup & Configuration     ")
+    print("        🤖 Chitti - Student Setup & Configuration         ")
     print("==========================================================")
 
     if is_interactive:

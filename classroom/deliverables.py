@@ -433,7 +433,8 @@ def stage_deliverable(
     # Generate SUMMARY.md checklist
     summary_path = staged_dir / "SUMMARY.md"
     summary_lines = [
-        f"# Deliverable Summary: {assignment_title}",
+        f"# 🤖 Chitti Deliverable Summary: {assignment_title}",
+        "> Generated and audited by **Chitti** — The Super-Intelligent Classroom Agent.",
         "",
         f"**Course:** {course_name}  ",
         f"**Assignment:** {assignment_title}  ",
@@ -541,13 +542,13 @@ def print_completion_card(
     # Determine status color and banner
     if deliverable.audit and deliverable.audit.blockers:
         border_style = "red"
-        title_text = "[bold red]🚫 ASSIGNMENT BLOCKED - ACTION REQUIRED[/bold red]"
+        title_text = "[bold red]🤖 CHITTI: 🚫 ASSIGNMENT BLOCKED - ACTION REQUIRED[/bold red]"
     elif deliverable.audit and deliverable.audit.student_action_items:
         border_style = "yellow"
-        title_text = "[bold yellow]⚠️ DELIVERABLE STAGED - STUDENT REVIEW REQUIRED[/bold yellow]"
+        title_text = "[bold yellow]🤖 CHITTI: ⚠️ DELIVERABLE STAGED - STUDENT REVIEW REQUIRED[/bold yellow]"
     else:
         border_style = "green"
-        title_text = "[bold green]✓ DELIVERABLE STAGED & READY FOR SUBMISSION[/bold green]"
+        title_text = "[bold green]🤖 CHITTI: ✓ DELIVERABLE STAGED & READY FOR SUBMISSION[/bold green]"
 
     table = Table.grid(padding=(0, 2))
     table.add_column("Key", style="bold cyan", justify="right")

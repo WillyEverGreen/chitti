@@ -641,27 +641,27 @@ def cmd_submit(args: argparse.Namespace) -> int:
 # =====================================================================
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the top-level argument parser for the Classroom Agent CLI."""
+    """Build the top-level argument parser for the Chitti CLI."""
     parser = argparse.ArgumentParser(
-        prog="classroom_agent",
-        description="Classroom Agent - Unified Master CLI for Google Classroom Intelligence, Deliverables & Submission",
+        prog="chitti",
+        description="🤖 Chitti - The Super-Intelligent Classroom & Assignment Agent",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Quick Workflow Guide:
   1. Setup student profile:
-     python classroom_agent.py setup
+     python chitti.py setup
   2. View pending assignments:
-     python classroom_agent.py pending
+     python chitti.py pending
   3. Inspect assignment requirements:
-     python classroom_agent.py details --course "Networks" --assignment "Lab 7"
+     python chitti.py details --course "Networks" --assignment "Lab 7"
   4. Compile academic PDF deliverable:
-     python classroom_agent.py build --course "Networks" --assignment "Lab 7" --proof screenshot.png --proof-caption "Terminal RIP Output"
+     python chitti.py build --course "Networks" --assignment "Lab 7" --proof screenshot.png --proof-caption "Terminal RIP Output"
   5. Attach authentic terminal screenshot proof:
-     python classroom_agent.py attach-proof --course "Networks" --assignment "Lab 7" --image term.png --caption "Ping Test"
+     python chitti.py attach-proof --course "Networks" --assignment "Lab 7" --image term.png --caption "Ping Test"
   6. Review staged deliverables:
-     python classroom_agent.py review
+     python chitti.py review
   7. Turn in via CDP engine:
-     python classroom_agent.py submit --course "Networks" --assignment "Lab 7"
+     python chitti.py submit --course "Networks" --assignment "Lab 7"
         """,
     )
 
