@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg?style=flat&logo=python&logoColor=white" alt="Python Versions">
-  <img src="https://img.shields.io/badge/Tests-96%20Passed%20(100%25)-success.svg?style=flat&logo=pytest&logoColor=white" alt="Test Status">
+  <img src="https://img.shields.io/badge/Tests-100%20Passed%20(100%25)-success.svg?style=flat&logo=pytest&logoColor=white" alt="Test Status">
   <img src="https://img.shields.io/badge/Google%20OAuth-Desktop%20App%20Verified-4285F4.svg?style=flat&logo=google&logoColor=white" alt="OAuth Verified">
   <img src="https://img.shields.io/badge/PDF%20Engine-ReportLab%20%2B%20PyMuPDF-FF6F00.svg?style=flat" alt="PDF Engine">
   <img src="https://img.shields.io/badge/Security-Sanitized%20%26%20Zero--Leak-brightgreen.svg?style=flat&logo=security" alt="Security Verified">
@@ -128,19 +128,31 @@ python chitti.py build \
 
 ---
 
-### Strategy B: Teacher Rubric / Template Augmentation
-When instructors provide a rubric cover sheet or lab manual template PDF, Chitti stamps student details onto Page 0 and seamlessly appends continuation solution pages:
+### Strategy B: Teacher Rubric & Lab Manual Augmentation (Zero Hallucination)
+When instructors provide an official rubric sheet or multi-page lab manual PDF (e.g., `CN_Expt_No_1.docx.pdf`), Chitti preserves 100% of the teacher's document and offers two non-destructive completion options:
 
+**1. In-Place Lab Manual Filling:**
+Stamps student credentials onto the rubric table with 14pt cell padding (zero border overlap) and fills post-lab questions directly at their designated blank spaces inside the original manual:
+```bash
+python chitti.py build \
+  --course "COMPUTER NETWORK" \
+  --assignment "CN_Expt_No_1" \
+  --template "C:/Users/advdi/Downloads/CN_Expt_No_1.docx.pdf" \
+  --answers-file "output/computer_network/cn_expt_1_answers.json"
+```
+*Output: Exactly 8 pages (identical to the teacher's original 8-page manual) with questions answered and architecture diagrams placed directly inside.*
+
+**2. Augmentation with Continuation Solution Pages & Authentic Screenshots:**
+If extensive source code or terminal execution output is required, Chitti stamps the teacher's rubric and appends formatted solution pages at the end:
 ```bash
 python chitti.py build \
   --course "Cryptography" \
   --assignment "Lab 3 - RSA Encryption" \
-  --template "output/cryptography/materials/teacher_rubric_template.pdf" \
-  --mode template \
+  --template "teacher_rubric.pdf" \
   --code "solution_rsa.py" \
-  --proof "rsa_terminal.png"
+  --proof "output/real_user_terminal_proof.png" \
+  --proof-caption "Figure 1: Authentic Terminal Execution of RSA Keygen & Decryption"
 ```
-**Output:** The original rubric sheet as Page 1 with student metadata stamped into the rubric boxes, followed by subsequent solution pages with matching margins and two-pass page numbers.
 
 ---
 
