@@ -295,3 +295,37 @@ def test_submit_command_auto_detect_staged(tmp_path):
             mock_exec.assert_called_once()
             call_kwargs = mock_exec.call_args[1]
             assert call_kwargs.get("files") == [str(pdf_file)]
+
+
+def test_handle_classroom_error_branches(capsys):
+    """Test all diagnostic branches of handle_classroom_error."""
+    from classroom_agent import handle_classroom_error
+
+    # Missing credentials
+    ret = handle_classroom_error(FileNotFoundError("credentials.json not found"))
+    assert ret == 1
+    assert "Google Credentials Needed" in capsys.readouterr().out
+
+    # Classroom API disabled
+    ret = handle_classroom_error(Exception("Google Classroom API has not been used or it is disabled"))
+    assert ret == 1
+    out = capsys.readouterr().out
+    assert "classroom.googleapis.com" in out
+
+    # Drive API disabled
+    ret = handle_classroom_error(Exception("Google Drive API has not been used or it is disabled"))
+    assert ret == 1
+    out = capsys.readouterr().out
+    assert "drive.googleapis.com" in out
+
+    # Access denied / test user
+    ret = handle_classroom_error(Exception("Error 403: access_denied - not authorized"))
+    assert ret == 1
+    out = capsys.readouterr().out
+    assert "Test User" in out
+
+    # College admin policy
+    ret = handle_classroom_error(Exception("admin_policy_enforced error"))
+    assert ret == 1
+    out = capsys.readouterr().out
+    assert "College Organization Policy" in out

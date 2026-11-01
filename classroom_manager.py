@@ -60,8 +60,19 @@ def get_credentials() -> Credentials:
                     "Please download your OAuth client ID credentials from Google Cloud Console "
                     "and place the JSON file as 'credentials.json' in this folder."
                 )
+            print("\n" + "=" * 64)
+            print("        🔑 Chitti: One-Time Google Classroom Authorization      ")
+            print("=" * 64)
+            print("Your credentials.json is loaded! A browser window will now open.")
+            print("Sign in with your Google / College account to authorize Chitti.")
+            print("\n💡 Important Tips:")
+            print("  • If Google shows 'Google hasn't verified this app':")
+            print("    Click 'Advanced' -> Click 'Go to Chitti (unsafe)' -> 'Continue'")
+            print("  • Check all permission boxes so Chitti can read coursework & sync.")
+            print("=" * 64 + "\n")
             flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
             creds = flow.run_local_server(port=0)
+            print("\n[OK] Authorization successful! Token saved to token.json.\n")
 
         with open(TOKEN_FILE, 'w') as token:
             token.write(creds.to_json())

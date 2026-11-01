@@ -118,6 +118,73 @@ def cmd_setup(args: argparse.Namespace, remaining_argv: List[str]) -> int:
 # Command: courses
 # =====================================================================
 
+def handle_classroom_error(exc: Exception) -> int:
+    """Provides user-friendly diagnosis and clickable fix links for Classroom API errors."""
+    err_msg = str(exc)
+    err_lower = err_msg.lower()
+
+    if "credentials.json" in err_lower:
+        print("\n" + "=" * 62)
+        print("        🤖 Chitti Helper: Google Credentials Needed           ")
+        print("=" * 62)
+        print("Google credentials.json was not found in this directory.\n")
+        print("Super easy options to connect:")
+        print("  [1] If you have Client ID & Client Secret:")
+        print("      python chitti.py setup --client-id YOUR_ID --client-secret YOUR_SECRET")
+        print("  [2] Run the interactive helper wizard:")
+        print("      python chitti.py setup")
+        print("  [3] Auto-open Google Cloud Console in your browser:")
+        print("      python chitti.py setup --open-browser")
+        print("=" * 62 + "\n")
+        return 1
+
+    if "classroom.googleapis.com" in err_lower or ("classroom" in err_lower and "disabled" in err_lower):
+        print("\n" + "=" * 66)
+        print("   ⚠️  Google Classroom API is not enabled in your Google Cloud Project")
+        print("=" * 66)
+        print("To fix this, open this link in your browser and click 'ENABLE':")
+        print("👉 https://console.cloud.google.com/apis/library/classroom.googleapis.com")
+        print("\nOnce enabled, re-run your command!")
+        print("=" * 66 + "\n")
+        return 1
+
+    if "drive.googleapis.com" in err_lower or ("drive" in err_lower and "disabled" in err_lower):
+        print("\n" + "=" * 66)
+        print("   ⚠️  Google Drive API is not enabled in your Google Cloud Project")
+        print("=" * 66)
+        print("To fix this, open this link in your browser and click 'ENABLE':")
+        print("👉 https://console.cloud.google.com/apis/library/drive.googleapis.com")
+        print("\nOnce enabled, re-run your command!")
+        print("=" * 66 + "\n")
+        return 1
+
+    if "access_denied" in err_lower or "test user" in err_lower or ("403" in err_lower and "not authorized" in err_lower):
+        print("\n" + "=" * 66)
+        print("   ⚠️  Access Blocked: Your email must be added as a Test User")
+        print("=" * 66)
+        print("Because your Google Cloud app is currently in 'Testing' mode:")
+        print("1. Go to: https://console.cloud.google.com/apis/credentials/consent")
+        print("2. Scroll down to 'Test users' and click '+ ADD USERS'")
+        print("3. Enter the exact Google email address you are signing in with")
+        print("4. Click 'SAVE' and retry: python chitti.py courses")
+        print("=" * 66 + "\n")
+        return 1
+
+    if "admin_policy_enforced" in err_lower or "org_internal" in err_lower:
+        print("\n" + "=" * 66)
+        print("   ⚠️  College Organization Policy Restriction")
+        print("=" * 66)
+        print("Your college Google Workspace administrator restricts third-party OAuth apps.")
+        print("No worries! You can use Chitti directly with your live browser session:")
+        print("👉 Run: python chitti.py submit --port 9444")
+        print("=" * 66 + "\n")
+        return 1
+
+    print(f"[!] Error accessing Google Classroom: {exc}")
+    print("Tip: Run 'python chitti.py setup' to check your configuration.")
+    return 1
+
+
 def cmd_courses(args: argparse.Namespace) -> int:
     """List all enrolled Google Classroom courses."""
     try:
@@ -126,23 +193,7 @@ def cmd_courses(args: argparse.Namespace) -> int:
         classroom_manager.display_courses(courses)
         return 0
     except Exception as exc:
-        if "credentials.json" in str(exc):
-            print("\n" + "=" * 62)
-            print("        🤖 Chitti Helper: Google Credentials Needed           ")
-            print("=" * 62)
-            print("Google credentials.json was not found in this directory.\n")
-            print("Super easy options to connect:")
-            print("  [1] If you have Client ID & Client Secret:")
-            print("      python chitti.py setup --client-id YOUR_ID --client-secret YOUR_SECRET")
-            print("  [2] Run the interactive helper wizard:")
-            print("      python chitti.py setup")
-            print("  [3] Auto-open Google Cloud Console in your browser:")
-            print("      python chitti.py setup --open-browser")
-            print("=" * 62 + "\n")
-            return 1
-        print(f"[!] Error accessing Google Classroom: {exc}")
-        print("Tip: Run 'python chitti.py setup' to configure Google Classroom API credentials.")
-        return 1
+        return handle_classroom_error(exc)
 
 
 # =====================================================================
@@ -167,8 +218,7 @@ def cmd_pending(args: argparse.Namespace) -> int:
         classroom_manager.display_pending(pending)
         return 0
     except Exception as exc:
-        print(f"[!] Error fetching pending assignments: {exc}")
-        return 1
+        return handle_classroom_error(exc)
 
 
 # =====================================================================
