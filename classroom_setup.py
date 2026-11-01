@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
 from typing import Optional, List
 import webbrowser
@@ -61,6 +62,34 @@ def prompt_value(prompt: str, default: str = "", required: bool = False) -> str:
             print("  This field cannot be empty. Please enter a value.")
             continue
         return val
+
+
+def check_downloads_for_credentials(dest_path: Path) -> bool:
+    """Scan the user's Downloads folder for client_secret_*.json or credentials.json."""
+    downloads_dir = Path.home() / "Downloads"
+    if not downloads_dir.exists():
+        return False
+
+    patterns = ["client_secret_*.json", "credentials*.json"]
+    candidates: List[Path] = []
+    for pat in patterns:
+        candidates.extend(downloads_dir.glob(pat))
+
+    if not candidates:
+        return False
+
+    # Pick the most recently modified candidate
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    latest = candidates[0]
+
+    print(f"\n[+] Auto-detected Google credentials in your Downloads folder:")
+    print(f"    Found: {latest.name}")
+    use_dl = prompt_value("Import this file into Chitti automatically? (Y/n)", default="y")
+    if use_dl.lower().startswith("y"):
+        shutil.copyfile(latest, dest_path)
+        print(f"[OK] Successfully imported {latest.name} -> {dest_path}!")
+        return True
+    return False
 
 
 def run_setup(argv: Optional[List[str]] = None) -> int:
@@ -170,7 +199,7 @@ def run_setup(argv: Optional[List[str]] = None) -> int:
     )
 
     saved_path = save_config(config, target_config_path)
-    print(f"\nConfiguration saved to {saved_path}")
+    print(f"\n[+] Configuration saved to {saved_path}")
 
     # Check for credentials presence
     check_creds = Path(creds_path)
@@ -182,34 +211,55 @@ def run_setup(argv: Optional[List[str]] = None) -> int:
         create_credentials_json(check_creds, args.client_id, args.client_secret)
         print(f"[OK] Google credentials file created automatically at {check_creds}")
 
+    # Auto-check Downloads folder
+    if not check_creds.exists() and is_interactive:
+        check_downloads_for_credentials(check_creds)
+
     if not check_creds.exists():
         if args.open_browser:
             print("[*] Opening Google Cloud Console in your default browser...")
             webbrowser.open("https://console.cloud.google.com/apis/credentials")
 
         if is_interactive:
-            print("\n" + "=" * 58)
-            print("     Google Classroom Credentials Helper (Super Easy)     ")
-            print("=" * 58)
-            print("Chitti needs your Google OAuth credentials to sync with Google Classroom.")
-            print("\nChoose an option:")
-            print("  [1] Paste Client ID and Client Secret (I'll generate credentials.json)")
-            print("  [2] Open Google Cloud Console in browser")
+            print("\n" + "=" * 60)
+            print("        Google Classroom Credentials Setup (Choose Below)       ")
+            print("=" * 60)
+            print("Chitti needs your Google OAuth credentials to connect to Google Classroom.\n")
+            print("Options:")
+            print("  [1] Paste Client ID & Client Secret (Chitti generates credentials.json)")
+            print("  [2] Open Google Cloud Console in browser (Guided step-by-step)")
             print("  [3] Skip for now (continue offline)")
             choice = prompt_value("Select an option (1/2/3)", default="3")
+
             if choice == "1":
+                print("\n--- Paste Your Google OAuth Client Info ---")
+                print("Get these from Google Cloud Console -> Credentials -> OAuth 2.0 Client IDs:")
                 cid = prompt_value("Google Client ID (e.g. *.apps.googleusercontent.com)", required=True)
                 csec = prompt_value("Google Client Secret (e.g. GOCSPX-*)", required=True)
                 if cid and csec:
                     create_credentials_json(check_creds, cid, csec)
                     print(f"\n[OK] Successfully created and verified {check_creds}!")
             elif choice == "2":
-                print("[*] Opening Google Cloud Console in your browser...")
+                print("\n[*] Opening Google Cloud Console in your browser...")
                 webbrowser.open("https://console.cloud.google.com/apis/credentials")
-                print("Steps in browser:")
-                print("  1. Click 'Create Credentials' -> 'OAuth client ID'")
-                print("  2. Select Application type: 'Desktop App' -> Name: 'Chitti'")
-                print("  3. Download JSON and save as 'credentials.json' here.")
+                print("\nExact 4 steps in your browser:")
+                print("  1. Click '+ Create credentials' (top menu) -> 'OAuth client ID'")
+                print("     (If prompted to configure Consent Screen: User Type: External -> App Name: Chitti -> Save)")
+                print("  2. Application type: Select 'Desktop app' -> Name: 'Chitti' -> Click 'Create'")
+                print("  3. In the popup, click 'DOWNLOAD JSON'")
+                print("  4. Return here and press Enter (Chitti will auto-detect and import it from Downloads!)")
+                print("\nImportant: Also ensure Google Classroom API is enabled:")
+                print("  👉 https://console.cloud.google.com/apis/library/classroom.googleapis.com")
+                try:
+                    input("\nPress Enter once you have downloaded the JSON from your browser...")
+                except (EOFError, StopIteration):
+                    pass
+                if not check_creds.exists():
+                    check_downloads_for_credentials(check_creds)
+                if check_creds.exists():
+                    print(f"[OK] Google credentials verified at {check_creds}!")
+                else:
+                    print(f"[!] File not detected yet at {check_creds}. You can run setup again anytime.")
         else:
             print(f"\n[Warning] Google credentials file '{creds_path}' was not found at {check_creds}.")
             print("  To sync coursework directly from Google Classroom:")
