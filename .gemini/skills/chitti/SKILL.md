@@ -56,12 +56,21 @@ python chitti.py build --course "<course>" --assignment "<assignment>" --templat
 
 ## 3. Strict Quality & Authenticity Constraints
 
-1. **No Fake Terminal Cards**:
-   - NEVER generate fake HTML or synthetic code-rendered terminal mocks.
-   - Always ingest authentic terminal screenshots, auto-crop margins, add 1px `#334155` frame, and scale proportionally:
-     ```powershell
-     python chitti.py attach-proof --course "<course>" --assignment "<assignment>" --image "screen.png" --caption "Execution Output"
-     ```
+1. **Zero Random Page Hallucination (Strict Document Preservation)**:
+   - **NEVER generate random synthetic pages** or throw away official documents without directly understanding the user's requirement.
+   - If a teacher provides a multi-page lab manual or rubric PDF (e.g., `CN_Expt_No_1.docx.pdf`), **preserve 100% of the original curriculum pages**. Do NOT replace them with generic ReportLab dummy text.
+   - **Prioritize In-Place Manual Completion**:
+     * Stamp student credentials (Name, Roll No, Date) directly into the rubric table cells with 14pt margin (zero border line overlap).
+     * Answer post-lab / discussion questions directly inside the designated blank spaces of the actual lab manual.
+   - **Continuation Pages are Explicit-Only**:
+     * Only append extra pages after the manual if the student explicitly supplies `--code`, `--proof`, `--theory`, or custom solution sections that cannot fit into the manual's blank spaces.
+
+2. **Authentic Terminal Screenshots Only (Strictly Candidate 2 & Candidate 4)**:
+   - NEVER generate fake PIL drawings with macOS traffic-light window buttons.
+   - Use either:
+     * **Candidate 2 (`vscode`)**: VS Code Integrated Terminal styling matching the student's IDE.
+     * **Candidate 4 (`frameless`)**: Minimalist black container with slate border for clean academic PDF print.
+     * **Real Desktop Snip (`Win + Shift + S`)**: Direct clipboard extraction via `python chitti.py attach-proof --from-clipboard`.
 2. **Requirement Auditing**:
    - Differentiate what is automated (code, calculations, formulas) from physical blockers (sensors, specialized breadboards) or student actions.
    - Never lie about physical blockers.
