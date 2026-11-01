@@ -406,13 +406,28 @@ def cmd_build(args: argparse.Namespace) -> int:
             sections.append({"type": "code", "text": code_text})
             assets_to_stage.append(code_p)
 
-    # Handle proof screenshot if provided
-    if args.proof:
+    proof_src = None
+    if getattr(args, "proof_clipboard", False):
+        try:
+            from PIL import ImageGrab
+            clip_img = ImageGrab.grabclipboard()
+            if clip_img is not None and hasattr(clip_img, "save"):
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf_clip:
+                    proof_src = Path(tf_clip.name)
+                clip_img.save(proof_src)
+            else:
+                print("[!] Clipboard does not contain an image. Please use Win + Shift + S to snip your terminal.")
+                return 1
+        except Exception as e:
+            print(f"[!] Error accessing clipboard: {e}")
+            return 1
+    elif args.proof:
         proof_src = Path(args.proof).expanduser().resolve()
         if not proof_src.exists():
             print(f"[!] Specified proof image does not exist: {proof_src}")
             return 1
 
+    if proof_src:
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
             temp_proof_dest = Path(tf.name)
 
@@ -531,9 +546,28 @@ def cmd_attach_proof(args: argparse.Namespace) -> int:
     assignment_slug = slugify(args.assignment) or "assignment"
     staged_dir = output_root / course_slug / assignment_slug
 
-    img_src = Path(args.image).expanduser().resolve()
-    if not img_src.exists():
-        print(f"[!] Error: Image file not found at: {img_src}")
+    img_src = None
+    if getattr(args, "from_clipboard", False):
+        try:
+            from PIL import ImageGrab
+            clip_img = ImageGrab.grabclipboard()
+            if clip_img is not None and hasattr(clip_img, "save"):
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf_clip:
+                    img_src = Path(tf_clip.name)
+                clip_img.save(img_src)
+            else:
+                print("[!] Clipboard does not contain an image. Please use Win + Shift + S to snip your terminal, then try again.")
+                return 1
+        except Exception as e:
+            print(f"[!] Error accessing clipboard: {e}")
+            return 1
+    elif getattr(args, "image", None):
+        img_src = Path(args.image).expanduser().resolve()
+        if not img_src.exists():
+            print(f"[!] Error: Image file not found at: {img_src}")
+            return 1
+    else:
+        print("[!] Error: Either --image <path> or --from-clipboard must be provided.")
         return 1
 
     caption = args.caption or "Authentic Terminal Screenshot & Output Proof"
@@ -1195,6 +1229,7 @@ Quick Workflow Guide:
     build_parser.add_argument("--answers-file", help="Path to JSON file mapping questions to answers for in-place manual filling", default=None)
     build_parser.add_argument("--sections-file", help="Path to JSON file containing structured flowable sections", default=None)
     build_parser.add_argument("--proof", help="Path to authentic terminal screenshot or observation photo", default=None)
+    build_parser.add_argument("--proof-clipboard", action="store_true", help="Extract terminal screenshot directly from Windows clipboard (Win + Shift + S)")
     build_parser.add_argument("--proof-caption", help="Caption describing the proof figure", default=None)
     build_parser.add_argument("--output-dir", help="Override output directory", default=None)
     build_parser.add_argument("--config-path", help="Path to student_config.json", default=None)
@@ -1206,7 +1241,8 @@ Quick Workflow Guide:
     )
     attach_parser.add_argument("--course", required=True, help="Course name or ID")
     attach_parser.add_argument("--assignment", required=True, help="Assignment title or ID")
-    attach_parser.add_argument("--image", required=True, help="Path to authentic screenshot or photo")
+    attach_parser.add_argument("--image", default=None, help="Path to authentic screenshot or photo")
+    attach_parser.add_argument("--from-clipboard", action="store_true", help="Extract screenshot directly from Windows clipboard (Win + Shift + S)")
     attach_parser.add_argument("--caption", help="Descriptive figure caption", default=None)
     attach_parser.add_argument("--config-path", help="Path to student_config.json", default=None)
 
