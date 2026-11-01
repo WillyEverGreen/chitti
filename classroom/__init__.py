@@ -22,6 +22,15 @@ from classroom.pdf_engine import (
     augment_teacher_template,
     overlay_on_template_page,
 )
+from classroom.deliverables import (
+    RequirementItem,
+    RequirementAudit,
+    StagedDeliverable,
+    audit_assignment_requirements,
+    stage_deliverable,
+    print_completion_card,
+    compute_sha256,
+)
 
 __version__ = "1.0.0"
 
@@ -42,5 +51,12 @@ __all__ = [
     "build_report_pdf",
     "augment_teacher_template",
     "overlay_on_template_page",
+    "RequirementItem",
+    "RequirementAudit",
+    "StagedDeliverable",
+    "audit_assignment_requirements",
+    "stage_deliverable",
+    "print_completion_card",
+    "compute_sha256",
     "__version__",
 ]
