@@ -57,7 +57,7 @@ python chitti.py build --course "<course>" --assignment "<assignment>" --templat
 ## 3. Strict Quality & Authenticity Constraints
 
 1. **No Fake Terminal Cards**:
-   - NEVER generate fake HTML or synthetic code-rendered terminal mocks ("terminal to bilkul bhi nahi").
+   - NEVER generate fake HTML or synthetic code-rendered terminal mocks.
    - Always ingest authentic terminal screenshots, auto-crop margins, add 1px `#334155` frame, and scale proportionally:
      ```powershell
      python chitti.py attach-proof --course "<course>" --assignment "<assignment>" --image "screen.png" --caption "Execution Output"

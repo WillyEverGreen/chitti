@@ -76,3 +76,4 @@ All outputs MUST be placed cleanly in `output/<course_slug>/`:
 - `output/<course_slug>/notes/<topic_slug>/`: Structured Markdown notes and compiled PDF study sheets.
 
 Keep the repository root pristine at all times.
+

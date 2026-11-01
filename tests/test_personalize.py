@@ -76,3 +76,4 @@ def test_personalize_reference_pdf_header_stamp(tmp_path):
 
     assert "Sai Balkawade" in out_text
     assert "10707" in out_text
+
