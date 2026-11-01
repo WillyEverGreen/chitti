@@ -53,6 +53,7 @@ from classroom.deliverables import (
 from classroom.media_processor import (
     ProcessedImage,
     process_terminal_screenshot,
+    render_terminal_screenshot,
 )
 from classroom.pdf_engine import (
     augment_teacher_template,
@@ -407,7 +408,17 @@ def cmd_build(args: argparse.Namespace) -> int:
             assets_to_stage.append(code_p)
 
     proof_src = None
-    if getattr(args, "proof_clipboard", False):
+    term_style = getattr(args, "terminal_style", None) or getattr(config, "terminal_style", "vscode")
+    if getattr(args, "terminal_text", None):
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf_term:
+            proof_src = Path(tf_term.name)
+        render_terminal_screenshot(
+            content=args.terminal_text,
+            dest_path=proof_src,
+            style=term_style,
+            caption=args.proof_caption or ("VS Code Terminal Output" if term_style == "vscode" else "Terminal Output"),
+        )
+    elif getattr(args, "proof_clipboard", False):
         try:
             from PIL import ImageGrab
             clip_img = ImageGrab.grabclipboard()
@@ -547,7 +558,17 @@ def cmd_attach_proof(args: argparse.Namespace) -> int:
     staged_dir = output_root / course_slug / assignment_slug
 
     img_src = None
-    if getattr(args, "from_clipboard", False):
+    term_style = getattr(args, "terminal_style", None) or getattr(config, "terminal_style", "vscode")
+    if getattr(args, "terminal_text", None):
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf_term:
+            img_src = Path(tf_term.name)
+        render_terminal_screenshot(
+            content=args.terminal_text,
+            dest_path=img_src,
+            style=term_style,
+            caption=args.caption or ("VS Code Terminal Output" if term_style == "vscode" else "Terminal Output"),
+        )
+    elif getattr(args, "from_clipboard", False):
         try:
             from PIL import ImageGrab
             clip_img = ImageGrab.grabclipboard()
@@ -567,7 +588,7 @@ def cmd_attach_proof(args: argparse.Namespace) -> int:
             print(f"[!] Error: Image file not found at: {img_src}")
             return 1
     else:
-        print("[!] Error: Either --image <path> or --from-clipboard must be provided.")
+        print("[!] Error: Either --image <path>, --from-clipboard, or --terminal-text must be provided.")
         return 1
 
     caption = args.caption or "Authentic Terminal Screenshot & Output Proof"
@@ -1230,6 +1251,8 @@ Quick Workflow Guide:
     build_parser.add_argument("--sections-file", help="Path to JSON file containing structured flowable sections", default=None)
     build_parser.add_argument("--proof", help="Path to authentic terminal screenshot or observation photo", default=None)
     build_parser.add_argument("--proof-clipboard", action="store_true", help="Extract terminal screenshot directly from Windows clipboard (Win + Shift + S)")
+    build_parser.add_argument("--terminal-text", help="Terminal text or command execution output to render as authentic screenshot", default=None)
+    build_parser.add_argument("--terminal-style", choices=["vscode", "frameless"], default=None, help="Terminal screenshot style (vscode or frameless)")
     build_parser.add_argument("--proof-caption", help="Caption describing the proof figure", default=None)
     build_parser.add_argument("--output-dir", help="Override output directory", default=None)
     build_parser.add_argument("--config-path", help="Path to student_config.json", default=None)
@@ -1243,6 +1266,8 @@ Quick Workflow Guide:
     attach_parser.add_argument("--assignment", required=True, help="Assignment title or ID")
     attach_parser.add_argument("--image", default=None, help="Path to authentic screenshot or photo")
     attach_parser.add_argument("--from-clipboard", action="store_true", help="Extract screenshot directly from Windows clipboard (Win + Shift + S)")
+    attach_parser.add_argument("--terminal-text", help="Terminal text or command output to render as screenshot", default=None)
+    attach_parser.add_argument("--terminal-style", choices=["vscode", "frameless"], default=None, help="Terminal screenshot style (vscode or frameless)")
     attach_parser.add_argument("--caption", help="Descriptive figure caption", default=None)
     attach_parser.add_argument("--config-path", help="Path to student_config.json", default=None)
 

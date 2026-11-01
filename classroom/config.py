@@ -21,6 +21,7 @@ class StudentConfig:
     credentials_path: str = "credentials.json"
     token_path: str = "token.json"
     chrome_debug_port: int = 9444
+    terminal_style: str = "vscode"
 
     def is_configured(self) -> bool:
         """Check if minimum identifying information has been populated."""

@@ -11,6 +11,7 @@ from classroom.media_processor import (
     process_diagram,
     process_image,
     process_terminal_screenshot,
+    render_terminal_screenshot,
 )
 
 
@@ -312,3 +313,36 @@ class TestPrintDimensionsHelper:
         pt_w, pt_h = calculate_print_dimensions(proc, max_pt_width=500.0, max_pt_height=600.0)
         assert pt_h == 600.0
         assert pytest.approx(pt_w, rel=1e-2) == 200.0
+
+
+class TestRenderTerminalScreenshot:
+    """Tests for authentic terminal screenshot rendering (Candidate 2 and Candidate 4)."""
+
+    def test_render_terminal_screenshot_vscode_style(self, tmp_path: Path):
+        dest = tmp_path / "term_vscode.png"
+        sample_output = "[*] Verifying RSA Key Pair:\n    Public Key -> [OK] Validated\n[SUCCESS] Decryption verified!"
+        res = render_terminal_screenshot(
+            content=sample_output,
+            dest_path=dest,
+            style="vscode",
+            command="python verify_rsa.py",
+        )
+        assert res.path.exists()
+        assert res.width > 300
+        assert res.height > 100
+        assert res.caption == "VS Code Terminal Output"
+
+    def test_render_terminal_screenshot_frameless_style(self, tmp_path: Path):
+        dest = tmp_path / "term_frameless.png"
+        sample_output = "[*] Ping Test: 4/4 packets received\n[SUCCESS] Latency 0.4ms"
+        res = render_terminal_screenshot(
+            content=sample_output,
+            dest_path=dest,
+            style="frameless",
+            command="ping 192.168.1.1",
+        )
+        assert res.path.exists()
+        assert res.width > 300
+        assert res.height > 100
+        assert res.caption == "Terminal Output"
+

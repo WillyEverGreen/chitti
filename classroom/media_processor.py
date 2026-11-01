@@ -8,10 +8,12 @@ framing borders, and dimension calculation for printable page layouts.
 """
 
 from dataclasses import dataclass
+import html
 from pathlib import Path
+import re
 from typing import Optional, Tuple, Union
 
-from PIL import Image, ImageChops, ImageOps
+from PIL import Image, ImageChops, ImageOps, ImageDraw, ImageFont
 
 
 # Standard maximum width in points for standard printable document pages (e.g. 500pt ~ 6.94 inches at 72 DPI)
@@ -302,6 +304,223 @@ def process_terminal_screenshot(
     )
 
 
+def _format_terminal_html_lines(raw_text: str, command: Optional[str] = None, cwd_prompt: str = "PS D:\\temp\\Classroom>") -> str:
+    """Format plain terminal text with authentic color classes."""
+    escaped = html.escape(raw_text)
+    lines = escaped.splitlines()
+    formatted_lines = []
+
+    if command and not any(command in line for line in lines[:3]):
+        formatted_lines.append(f'<span class="prompt">{html.escape(cwd_prompt)}</span> <span class="cmd">{html.escape(command)}</span>')
+
+    for line in lines:
+        if line.startswith("PS ") and "&gt;" in line:
+            parts = line.split("&gt;", 1)
+            formatted_lines.append(f'<span class="prompt">{parts[0]}&gt;</span><span class="cmd">{parts[1]}</span>')
+        elif "[OK]" in line:
+            line_hl = line.replace("[OK]", '<span class="ok">[OK]</span>')
+            formatted_lines.append(line_hl)
+        elif "[SUCCESS]" in line:
+            formatted_lines.append(f'<span class="success-box">{line}</span>')
+        elif line.startswith("[+]") or line.startswith("[*]"):
+            formatted_lines.append(f'<span class="highlight">{line}</span>')
+        elif line.startswith("===") or line.startswith("---"):
+            formatted_lines.append(f'<span class="header">{line}</span>')
+        else:
+            formatted_lines.append(line)
+
+    if not lines[-1].strip().startswith("PS "):
+        formatted_lines.append(f'<span class="prompt">{html.escape(cwd_prompt)}</span> ')
+
+    return "\n".join(formatted_lines)
+
+
+def render_terminal_screenshot(
+    content: str,
+    dest_path: Union[str, Path],
+    style: str = "vscode",
+    caption: Optional[str] = None,
+    command: Optional[str] = None,
+    cwd_prompt: str = "PS D:\\temp\\Classroom>",
+) -> ProcessedImage:
+    """Render authentic terminal screenshot using Candidate 2 (vscode) or Candidate 4 (frameless).
+
+    Args:
+        content: Terminal execution text output.
+        dest_path: Destination path for rendered PNG.
+        style: 'vscode' (VS Code Integrated Terminal) or 'frameless' (Minimalist Black).
+        caption: Optional figure caption.
+        command: Optional command string to prepend.
+        cwd_prompt: Working directory prompt string.
+
+    Returns:
+        ProcessedImage dataclass.
+    """
+    out_p = Path(dest_path).resolve()
+    out_p.parent.mkdir(parents=True, exist_ok=True)
+
+    formatted_body = _format_terminal_html_lines(content, command=command, cwd_prompt=cwd_prompt)
+
+    if style.lower() == "frameless":
+        html_code = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body {{
+    margin: 0;
+    padding: 16px;
+    background: transparent;
+    font-family: 'Cascadia Mono', 'Consolas', monospace;
+    display: inline-block;
+  }}
+  .target-container {{
+    width: 820px;
+    background: #000000;
+    border-radius: 4px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    border: 1px solid #333333;
+    padding: 16px 20px;
+    color: #d1d5db;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }}
+  .prompt {{ color: #38bdf8; font-weight: bold; }}
+  .cmd {{ color: #ffffff; }}
+  .header {{ color: #60a5fa; font-weight: bold; }}
+  .ok {{ color: #4ade80; font-weight: bold; }}
+  .highlight {{ color: #fbbf24; }}
+  .success-box {{ color: #4ade80; font-weight: bold; }}
+</style>
+</head>
+<body>
+  <div class="target-container">{formatted_body}</div>
+</body>
+</html>"""
+    else:  # Default 'vscode' (Candidate 2)
+        html_code = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body {{
+    margin: 0;
+    padding: 16px;
+    background: transparent;
+    font-family: 'Consolas', 'Courier New', monospace;
+    display: inline-block;
+  }}
+  .target-container {{
+    width: 820px;
+    background: #181818;
+    border-radius: 6px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    border: 1px solid #2b2b2b;
+    overflow: hidden;
+  }}
+  .vscode-header {{
+    background: #1f1f1f;
+    display: flex;
+    align-items: center;
+    height: 35px;
+    border-bottom: 1px solid #2b2b2b;
+    padding: 0 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 12px;
+    color: #969696;
+  }}
+  .vscode-tabs {{
+    display: flex;
+    gap: 16px;
+  }}
+  .vscode-tab.active {{
+    color: #ffffff;
+    font-weight: 500;
+    border-bottom: 1px solid #007acc;
+    padding-bottom: 8px;
+  }}
+  .vscode-actions {{
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #cccccc;
+    font-size: 12px;
+  }}
+  .terminal-body {{
+    padding: 14px 18px;
+    color: #cccccc;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }}
+  .prompt {{ color: #3b8eea; font-weight: bold; }}
+  .cmd {{ color: #d4d4d4; }}
+  .header {{ color: #4ec9b0; font-weight: bold; }}
+  .ok {{ color: #89d185; font-weight: bold; }}
+  .highlight {{ color: #ce9178; }}
+  .success-box {{ color: #89d185; font-weight: bold; }}
+</style>
+</head>
+<body>
+  <div class="target-container">
+    <div class="vscode-header">
+      <div class="vscode-tabs">
+        <span>Problems 0</span>
+        <span>Output</span>
+        <span>Debug Console</span>
+        <span class="vscode-tab active">Terminal</span>
+      </div>
+      <div class="vscode-actions">
+        <span>1: powershell</span>
+        <span>+ ▾</span>
+        <span>◫</span>
+        <span>✕</span>
+      </div>
+    </div>
+    <div class="terminal-body">{formatted_body}</div>
+  </div>
+</body>
+</html>"""
+
+    rendered_ok = False
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            for ch in ["chrome", "msedge", None]:
+                try:
+                    kwargs = {"channel": ch} if ch else {}
+                    browser = p.chromium.launch(**kwargs)
+                    page = browser.new_page(device_scale_factor=2)
+                    page.set_content(html_code)
+                    elem = page.locator(".target-container")
+                    elem.screenshot(path=str(out_p))
+                    browser.close()
+                    rendered_ok = True
+                    break
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+    if not rendered_ok or not out_p.exists():
+        # Fallback to pure PIL rendering if headless browser unavailable
+        img = Image.new("RGB", (820, 480), color=(24, 24, 24))
+        draw = ImageDraw.Draw(img)
+        draw.text((20, 20), content, fill=(204, 204, 204))
+        img.save(out_p)
+
+    return process_terminal_screenshot(
+        src_path=out_p,
+        dest_path=out_p,
+        caption=caption or ("VS Code Terminal Output" if style == "vscode" else "Terminal Output"),
+        add_border=False,
+    )
+
+
 def process_diagram(
     src_path: Union[str, Path],
     dest_path: Union[str, Path],
@@ -342,4 +561,221 @@ def process_diagram(
         padding=padding,
         max_width=max_width,
         autocrop=autocrop,
+    )
+
+
+def _format_terminal_html_lines(raw_text: str, command: Optional[str] = None, cwd_prompt: str = "PS D:\\temp\\Classroom>") -> str:
+    """Format plain terminal text with authentic color classes."""
+    escaped = html.escape(raw_text)
+    lines = escaped.splitlines()
+    formatted_lines = []
+
+    if command and not any(command in line for line in lines[:3]):
+        formatted_lines.append(f'<span class="prompt">{html.escape(cwd_prompt)}</span> <span class="cmd">{html.escape(command)}</span>')
+
+    for line in lines:
+        if line.startswith("PS ") and "&gt;" in line:
+            parts = line.split("&gt;", 1)
+            formatted_lines.append(f'<span class="prompt">{parts[0]}&gt;</span><span class="cmd">{parts[1]}</span>')
+        elif "[OK]" in line:
+            line_hl = line.replace("[OK]", '<span class="ok">[OK]</span>')
+            formatted_lines.append(line_hl)
+        elif "[SUCCESS]" in line:
+            formatted_lines.append(f'<span class="success-box">{line}</span>')
+        elif line.startswith("[+]") or line.startswith("[*]"):
+            formatted_lines.append(f'<span class="highlight">{line}</span>')
+        elif line.startswith("===") or line.startswith("---"):
+            formatted_lines.append(f'<span class="header">{line}</span>')
+        else:
+            formatted_lines.append(line)
+
+    if not lines[-1].strip().startswith("PS "):
+        formatted_lines.append(f'<span class="prompt">{html.escape(cwd_prompt)}</span> ')
+
+    return "\n".join(formatted_lines)
+
+
+def render_terminal_screenshot(
+    content: str,
+    dest_path: Union[str, Path],
+    style: str = "vscode",
+    caption: Optional[str] = None,
+    command: Optional[str] = None,
+    cwd_prompt: str = "PS D:\\temp\\Classroom>",
+) -> ProcessedImage:
+    """Render authentic terminal screenshot using Candidate 2 (vscode) or Candidate 4 (frameless).
+
+    Args:
+        content: Terminal execution text output.
+        dest_path: Destination path for rendered PNG.
+        style: 'vscode' (VS Code Integrated Terminal) or 'frameless' (Minimalist Black).
+        caption: Optional figure caption.
+        command: Optional command string to prepend.
+        cwd_prompt: Working directory prompt string.
+
+    Returns:
+        ProcessedImage dataclass.
+    """
+    out_p = Path(dest_path).resolve()
+    out_p.parent.mkdir(parents=True, exist_ok=True)
+
+    formatted_body = _format_terminal_html_lines(content, command=command, cwd_prompt=cwd_prompt)
+
+    if style.lower() == "frameless":
+        html_code = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body {{
+    margin: 0;
+    padding: 16px;
+    background: transparent;
+    font-family: 'Cascadia Mono', 'Consolas', monospace;
+    display: inline-block;
+  }}
+  .target-container {{
+    width: 820px;
+    background: #000000;
+    border-radius: 4px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    border: 1px solid #333333;
+    padding: 16px 20px;
+    color: #d1d5db;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }}
+  .prompt {{ color: #38bdf8; font-weight: bold; }}
+  .cmd {{ color: #ffffff; }}
+  .header {{ color: #60a5fa; font-weight: bold; }}
+  .ok {{ color: #4ade80; font-weight: bold; }}
+  .highlight {{ color: #fbbf24; }}
+  .success-box {{ color: #4ade80; font-weight: bold; }}
+</style>
+</head>
+<body>
+  <div class="target-container">{formatted_body}</div>
+</body>
+</html>"""
+    else:  # Default 'vscode' (Candidate 2)
+        html_code = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body {{
+    margin: 0;
+    padding: 16px;
+    background: transparent;
+    font-family: 'Consolas', 'Courier New', monospace;
+    display: inline-block;
+  }}
+  .target-container {{
+    width: 820px;
+    background: #181818;
+    border-radius: 6px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    border: 1px solid #2b2b2b;
+    overflow: hidden;
+  }}
+  .vscode-header {{
+    background: #1f1f1f;
+    display: flex;
+    align-items: center;
+    height: 35px;
+    border-bottom: 1px solid #2b2b2b;
+    padding: 0 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 12px;
+    color: #969696;
+  }}
+  .vscode-tabs {{
+    display: flex;
+    gap: 16px;
+  }}
+  .vscode-tab.active {{
+    color: #ffffff;
+    font-weight: 500;
+    border-bottom: 1px solid #007acc;
+    padding-bottom: 8px;
+  }}
+  .vscode-actions {{
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #cccccc;
+    font-size: 12px;
+  }}
+  .terminal-body {{
+    padding: 14px 18px;
+    color: #cccccc;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }}
+  .prompt {{ color: #3b8eea; font-weight: bold; }}
+  .cmd {{ color: #d4d4d4; }}
+  .header {{ color: #4ec9b0; font-weight: bold; }}
+  .ok {{ color: #89d185; font-weight: bold; }}
+  .highlight {{ color: #ce9178; }}
+  .success-box {{ color: #89d185; font-weight: bold; }}
+</style>
+</head>
+<body>
+  <div class="target-container">
+    <div class="vscode-header">
+      <div class="vscode-tabs">
+        <span>Problems 0</span>
+        <span>Output</span>
+        <span>Debug Console</span>
+        <span class="vscode-tab active">Terminal</span>
+      </div>
+      <div class="vscode-actions">
+        <span>1: powershell</span>
+        <span>+ ▾</span>
+        <span>◫</span>
+        <span>✕</span>
+      </div>
+    </div>
+    <div class="terminal-body">{formatted_body}</div>
+  </div>
+</body>
+</html>"""
+
+    rendered_ok = False
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            for ch in ["chrome", "msedge", None]:
+                try:
+                    kwargs = {"channel": ch} if ch else {}
+                    browser = p.chromium.launch(**kwargs)
+                    page = browser.new_page(device_scale_factor=2)
+                    page.set_content(html_code)
+                    elem = page.locator(".target-container")
+                    elem.screenshot(path=str(out_p))
+                    browser.close()
+                    rendered_ok = True
+                    break
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+    if not rendered_ok or not out_p.exists():
+        # Fallback to pure PIL rendering if headless browser unavailable
+        img = Image.new("RGB", (820, 480), color=(24, 24, 24))
+        draw = ImageDraw.Draw(img)
+        draw.text((20, 20), content, fill=(204, 204, 204))
+        img.save(out_p)
+
+    return process_terminal_screenshot(
+        src_path=out_p,
+        dest_path=out_p,
+        caption=caption or ("VS Code Terminal Output" if style == "vscode" else "Terminal Output"),
+        add_border=False,
     )

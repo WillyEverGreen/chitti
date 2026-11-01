@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg?style=flat&logo=python&logoColor=white" alt="Python Versions">
-  <img src="https://img.shields.io/badge/Tests-100%20Passed%20(100%25)-success.svg?style=flat&logo=pytest&logoColor=white" alt="Test Status">
+  <img src="https://img.shields.io/badge/Tests-102%20Passed%20(100%25)-success.svg?style=flat&logo=pytest&logoColor=white" alt="Test Status">
   <img src="https://img.shields.io/badge/Google%20OAuth-Desktop%20App%20Verified-4285F4.svg?style=flat&logo=google&logoColor=white" alt="OAuth Verified">
   <img src="https://img.shields.io/badge/PDF%20Engine-ReportLab%20%2B%20PyMuPDF-FF6F00.svg?style=flat" alt="PDF Engine">
   <img src="https://img.shields.io/badge/Security-Sanitized%20%26%20Zero--Leak-brightgreen.svg?style=flat&logo=security" alt="Security Verified">
@@ -208,8 +208,8 @@ Downloads available PDFs and compiles a structured `materials_catalog.md` linkin
 | `courses` | `python chitti.py courses` | List all enrolled Google Classroom courses with IDs and section details. |
 | `pending` | `python chitti.py pending [--course "..."]` | Scan pending and overdue assignments across all courses. |
 | `details` | `python chitti.py details --course "..." --assignment "..."` | Inspect assignment prompt, max points, due dates, and rubrics. |
-| `build` | `python chitti.py build --course "..." --assignment "..." [flags]` | Compile academic PDF via Strategy A, B, or C and stage in `output/`. |
-| `attach-proof` | `python chitti.py attach-proof --course "..." --assignment "..." --image "..."` | Attach and frame additional terminal screenshot into staged report. |
+| `build` | `python chitti.py build --course "..." --assignment "..." [flags]` | Compile academic PDF via Strategy A, B, or C (supports `--terminal-style vscode\|frameless`). |
+| `attach-proof` | `python chitti.py attach-proof --course "..." --assignment "..." [--from-clipboard \| --image "..." \| --terminal-text "..."]` | Attach terminal proof from clipboard (`Win+Shift+S`), image file, or text output. |
 | `notes` | `python chitti.py notes --course "..." --topic "..." [--theory "..."]` | Generate revision markdown notes and companion PDF cheat sheet. |
 | `materials` | `python chitti.py materials --course "..."` | Download course materials and generate `materials_catalog.md`. |
 | `review` | `python chitti.py review [--course "..."]` | Review staged deliverables, page counts, and automated audit status. |
