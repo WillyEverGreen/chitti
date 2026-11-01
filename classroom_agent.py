@@ -938,19 +938,24 @@ def cmd_status(args: argparse.Namespace) -> int:
         p_table.add_column("Urgency", style="bold")
 
         if pending_list:
-            for p in pending_list[:8]:
-                due_dt = p.get("due_datetime")
-                urgency = "[green]Upcoming[/green]"
-                if due_dt:
-                    now = datetime.now(timezone.utc)
-                    if due_dt < now:
-                        urgency = "[red]OVERDUE[/red]"
-                    elif (due_dt - now).days <= 2:
-                        urgency = "[yellow]Due Soon[/yellow]"
+            for p in pending_list:
+                course_name = p.get("course_name") or "Course"
+                title = p.get("title") or p.get("assignment_title") or "Untitled Assignment"
+                due_formatted = p.get("due_formatted") or p.get("due_date") or "No due date"
+                is_overdue = p.get("is_overdue", False)
+
+                if is_overdue:
+                    urgency = "[bold red]OVERDUE[/bold red]"
+                    due_styled = f"[red]{due_formatted}[/red]"
+                else:
+                    state_val = p.get("state", "ASSIGNED")
+                    urgency = f"[yellow]{state_val}[/yellow]"
+                    due_styled = f"[white]{due_formatted}[/white]"
+
                 p_table.add_row(
-                    p.get("course_name", "")[:24],
-                    p.get("assignment_title", "")[:32],
-                    p.get("due_date", "No due date"),
+                    course_name[:28],
+                    title[:40],
+                    due_styled,
                     urgency,
                 )
             console.print(p_table)
@@ -999,9 +1004,14 @@ def cmd_status(args: argparse.Namespace) -> int:
     else:
         print("\n--- Academic Dashboard ---")
         print(f"Student: {config.student_name} ({config.roll_number})")
-        print(f"Pending assignments: {len(pending_list)}")
+        print(f"\n🚨 Pending Assignments ({len(pending_list)}):")
+        for p in pending_list:
+            tag = "[OVERDUE]" if p.get("is_overdue") else f"[{p.get('state', 'ASSIGNED')}]"
+            title = p.get("title") or p.get("assignment_title") or "Untitled"
+            due = p.get("due_formatted") or p.get("due_date") or "No due date"
+            print(f"  {tag} {p.get('course_name')} -> {title} (Due: {due})")
         manifests = list(output_root.glob("**/manifest.json")) if output_root.exists() else []
-        print(f"Staged deliverables: {len(manifests)}")
+        print(f"\nStaged deliverables: {len(manifests)}")
         notes_mds = list(output_root.glob("**/notes/**/notes.md")) if output_root.exists() else []
         print(f"Study notes:         {len(notes_mds)}\n")
 
