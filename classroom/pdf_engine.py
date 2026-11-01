@@ -582,6 +582,159 @@ def build_report_pdf(
     return out_path
 
 
+def smart_fill_rubric_fields(
+    page: Any,
+    config: Optional[StudentConfig],
+    submission_date: Optional[str] = None,
+    performance_date: Optional[str] = None,
+) -> bool:
+    """Smartly fills student name, roll number, and date directly into rubric fields/lines.
+
+    Detects both inline underline prompts (e.g. 'Name: ______', 'Roll No: ______')
+    and formal table cells (e.g. college evaluation rubrics with vertical column dividers).
+    Returns True if at least one field was found and filled.
+    """
+    if not config or not config.student_name:
+        return False
+
+    name = config.student_name.strip()
+    roll = str(config.roll_number or "").strip()
+    sub_date = submission_date or datetime.now().strftime("%d/%m/%Y")
+    perf_date = performance_date or sub_date
+
+    # 1. Detect vertical dividing lines to understand table column layout
+    v_lines = []
+    for d in page.get_drawings():
+        r = d.get("rect")
+        if r and r.width < 3 and r.height > 15:
+            v_lines.append(r.x0)
+    v_lines = sorted(list(set(round(x, 1) for x in v_lines)))
+
+    def get_val_x(label_rect: Any) -> float:
+        for vx in v_lines:
+            if vx > label_rect.x0 and vx >= label_rect.x1 - 5:
+                return vx + 6
+        return label_rect.x1 + 6
+
+    fields_filled = 0
+
+    # 1. Fill Name
+    name_done = False
+    for pat in [
+        "Name of the Student:",
+        "Name of Student:",
+        "Student Name:",
+        "Name of the Student",
+        "Name of Student",
+        "Name:",
+    ]:
+        hits = page.search_for(pat)
+        if hits:
+            r = hits[0]
+            val_x = (
+                r.x1 + 4
+                if "_" in page.get_text("text", clip=fitz.Rect(r.x1, r.y0 - 2, r.x1 + 160, r.y1 + 2))
+                else get_val_x(r)
+            )
+            page.insert_text(
+                fitz.Point(val_x, r.y1 - 1.5),
+                name,
+                fontsize=10.5,
+                fontname="hebo",
+                color=(0.08, 0.15, 0.35),
+            )
+            name_done = True
+            fields_filled += 1
+            break
+
+    if not name_done:
+        # Check for standalone table cell 'Name' (below title header y > 150, left col x < 200)
+        for r in page.search_for("Name"):
+            if r.y0 > 150 and r.x0 < 200:
+                val_x = get_val_x(r)
+                page.insert_text(
+                    fitz.Point(val_x, r.y1 - 1.5),
+                    name,
+                    fontsize=10.5,
+                    fontname="hebo",
+                    color=(0.08, 0.15, 0.35),
+                )
+                name_done = True
+                fields_filled += 1
+                break
+
+    # 2. Fill Roll No
+    for pat in [
+        "Roll No:",
+        "Roll Number:",
+        "Roll No.",
+        "Roll No",
+        "URN:",
+        "UID:",
+        "Registration No:",
+    ]:
+        hits = page.search_for(pat)
+        if hits:
+            r = hits[0]
+            val_x = (
+                r.x1 + 4
+                if "_" in page.get_text("text", clip=fitz.Rect(r.x1, r.y0 - 2, r.x1 + 160, r.y1 + 2))
+                else get_val_x(r)
+            )
+            page.insert_text(
+                fitz.Point(val_x, r.y1 - 1.5),
+                roll,
+                fontsize=10.5,
+                fontname="hebo",
+                color=(0.08, 0.15, 0.35),
+            )
+            fields_filled += 1
+            break
+
+    # 3. Fill Date of Submission
+    for pat in [
+        "Date of Submission:",
+        "Date of Submission",
+        "Submission Date:",
+        "Date:",
+    ]:
+        hits = page.search_for(pat)
+        if hits:
+            r = hits[-1]
+            val_x = (
+                r.x1 + 4
+                if "_" in page.get_text("text", clip=fitz.Rect(r.x1, r.y0 - 2, r.x1 + 160, r.y1 + 2))
+                else get_val_x(r)
+            )
+            page.insert_text(
+                fitz.Point(val_x, r.y1 - 1.5),
+                sub_date,
+                fontsize=10,
+                fontname="hebo",
+                color=(0.08, 0.15, 0.35),
+            )
+            fields_filled += 1
+            break
+
+    # 4. Fill Date of Performance if present
+    for pat in ["Date of Performance:", "Date of Performance"]:
+        hits = page.search_for(pat)
+        if hits:
+            r = hits[0]
+            val_x = get_val_x(r)
+            page.insert_text(
+                fitz.Point(val_x, r.y1 - 1.5),
+                perf_date,
+                fontsize=10,
+                fontname="hebo",
+                color=(0.08, 0.15, 0.35),
+            )
+            fields_filled += 1
+            break
+
+    return fields_filled > 0
+
+
 def augment_teacher_template(
     template_pdf_path: Optional[Union[str, Path]] = None,
     solution_pdf_path: Optional[Union[str, Path]] = None,
@@ -652,14 +805,18 @@ def augment_teacher_template(
         except Exception as exc:
             raise ValueError(f"Failed to open PDF template file '{t_path}': {exc}") from exc
 
-        # Stamp student credentials on page 0 of template if requested
-        if stamp_student_info and config and config.student_name and len(t_doc) > 0:
+        # Smartly fill student credentials on template page 0 if requested
+        if stamp_student_info and config and len(t_doc) > 0:
             p0 = t_doc[0]
-            header_rect = fitz.Rect(36, 12, p0.rect.width - 36, 36)
-            p0.draw_rect(header_rect, color=(0.8, 0.85, 0.9), fill=(0.96, 0.98, 1.0), width=0.5)
-            dept_txt = f" | Dept: {config.department}" if config.department else ""
-            txt = f"Student: {config.student_name} | Roll: {config.roll_number}{dept_txt}"
-            p0.insert_textbox(header_rect, txt, fontsize=8.5, fontname="hebo", color=(0.1, 0.2, 0.35), align=fitz.TEXT_ALIGN_CENTER)
+            filled = smart_fill_rubric_fields(p0, config)
+            if not filled and config.student_name:
+                p0.insert_text(
+                    fitz.Point(36, 24),
+                    f"{config.student_name} | Roll No: {config.roll_number or ''}",
+                    fontsize=8.5,
+                    fontname="hebo",
+                    color=(0.25, 0.3, 0.4),
+                )
 
         try:
             s_doc = fitz.open(str(s_path))
@@ -844,14 +1001,18 @@ def personalize_reference_pdf(
                         color=(0, 0, 0),
                     )
 
-        # 3. If no specific target strings were replaced and stamp_header is True, stamp header on page 0
+        # 3. If no specific target strings were replaced and stamp_header is True, smart fill on page 0
         if not replaced_any and stamp_header and len(doc) > 0:
             p0 = doc[0]
-            header_rect = fitz.Rect(36, 18, p0.rect.width - 36, 44)
-            p0.draw_rect(header_rect, color=(0.8, 0.85, 0.9), fill=(0.95, 0.97, 1.0), width=0.5)
-            dept_part = f" | Dept: {config.department}" if config.department else ""
-            header_text = f"Student: {config.student_name} | Roll: {config.roll_number}{dept_part}"
-            p0.insert_textbox(header_rect, header_text, fontsize=9.0, fontname="hebo", color=(0.1, 0.2, 0.3), align=fitz.TEXT_ALIGN_CENTER)
+            filled = smart_fill_rubric_fields(p0, config)
+            if not filled and config.student_name:
+                p0.insert_text(
+                    fitz.Point(36, 24),
+                    f"{config.student_name} | Roll No: {config.roll_number or ''}",
+                    fontsize=8.5,
+                    fontname="hebo",
+                    color=(0.25, 0.3, 0.4),
+                )
 
         doc.save(str(out))
         return out

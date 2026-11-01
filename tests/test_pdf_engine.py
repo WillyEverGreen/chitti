@@ -270,6 +270,39 @@ def test_augment_teacher_template_with_solution_sections(tmp_path: Path, sample_
     doc.close()
 
 
+def test_smart_fill_rubric_fields_inline_and_table(tmp_path: Path):
+    """Test smart_fill_rubric_fields on both inline underline templates and table rubrics."""
+    from classroom.pdf_engine import smart_fill_rubric_fields
+
+    config = StudentConfig(student_name="Test Student", roll_number="CS-001", department="Computer Science")
+
+    # 1. Inline Underline rubric
+    doc1 = fitz.open()
+    p1 = doc1.new_page(width=595, height=842)
+    p1.insert_text((50, 100), "DEPARTMENT OF COMPUTER ENGINEERING")
+    p1.insert_text((50, 130), "Name: ______________________   Roll No: _______   Date: ________")
+    assert smart_fill_rubric_fields(p1, config, submission_date="01/11/2026") is True
+    t1 = p1.get_text()
+    assert "Test Student" in t1
+    assert "CS-001" in t1
+    assert "01/11/2026" in t1
+    doc1.close()
+
+    # 2. Table cell rubric
+    doc2 = fitz.open()
+    p2 = doc2.new_page(width=595, height=842)
+    p2.draw_line(fitz.Point(180, 200), fitz.Point(180, 400))
+    p2.insert_text((90, 250), "Date of Submission")
+    p2.insert_text((90, 300), "Roll No")
+    p2.insert_text((90, 350), "Name")
+    assert smart_fill_rubric_fields(p2, config, submission_date="01/11/2026") is True
+    t2 = p2.get_text()
+    assert "Test Student" in t2
+    assert "CS-001" in t2
+    assert "01/11/2026" in t2
+    doc2.close()
+
+
 def test_overlay_on_template_page(tmp_path: Path):
     """Test overlaying student metadata and answers onto a designated page of a teacher template."""
     template_pdf = tmp_path / "exam_sheet.pdf"

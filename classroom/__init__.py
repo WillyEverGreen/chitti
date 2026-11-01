@@ -20,6 +20,7 @@ from classroom.pdf_engine import (
     NumberedCanvas,
     build_report_pdf,
     augment_teacher_template,
+    smart_fill_rubric_fields,
     overlay_on_template_page,
     personalize_reference_pdf,
 )
