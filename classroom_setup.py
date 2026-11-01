@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Interactive Onboarding and Configuration Wizard for Classroom Agent.
+"""Interactive Onboarding and Configuration Wizard for Chitti 🤖.
 
 Initializes or updates `student_config.json` with student profile information,
 credentials paths, and output settings.
 """
 
 import argparse
+import json
 import os
 from pathlib import Path
 import sys
 from typing import Optional, List
+import webbrowser
 
 from classroom.config import (
     StudentConfig,
@@ -17,6 +19,29 @@ from classroom.config import (
     save_config,
     get_default_config_path,
 )
+
+
+def create_credentials_json(
+    dest_path: Path,
+    client_id: str,
+    client_secret: str,
+    project_id: str = "chitti-classroom",
+) -> None:
+    """Create a standard Google OAuth Desktop app credentials.json file."""
+    data = {
+        "installed": {
+            "client_id": client_id.strip(),
+            "project_id": project_id.strip(),
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_secret": client_secret.strip(),
+            "redirect_uris": ["http://localhost"],
+        }
+    }
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(dest_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
 
 
 def prompt_value(prompt: str, default: str = "", required: bool = False) -> str:
@@ -27,7 +52,7 @@ def prompt_value(prompt: str, default: str = "", required: bool = False) -> str:
     while True:
         try:
             val = input(full_prompt).strip()
-        except EOFError:
+        except (EOFError, StopIteration):
             val = ""
 
         if not val and default:
@@ -58,6 +83,9 @@ def run_setup(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("-t", "--token", default="token.json", help="Path to Google OAuth token.json")
     parser.add_argument("-p", "--port", type=int, default=9444, help="Chrome Remote Debugging port")
     parser.add_argument("--config-path", default=None, help="Target path for student_config.json")
+    parser.add_argument("--client-id", default="", help="Google OAuth Client ID to auto-generate credentials.json")
+    parser.add_argument("--client-secret", default="", help="Google OAuth Client Secret to auto-generate credentials.json")
+    parser.add_argument("--open-browser", action="store_true", help="Open Google Cloud Console in browser")
 
     args = parser.parse_args(argv)
 
@@ -74,7 +102,7 @@ def run_setup(argv: Optional[List[str]] = None) -> int:
     # Check whether we should run interactively
     if args.non_interactive:
         is_interactive = False
-    elif any([args.name, args.roll, args.dept, args.institution]):
+    elif any([args.name, args.roll, args.dept, args.institution, args.client_id]):
         is_interactive = False
     else:
         is_interactive = True
@@ -122,12 +150,45 @@ def run_setup(argv: Optional[List[str]] = None) -> int:
     if not check_creds.is_absolute():
         check_creds = Path.cwd() / check_creds
 
+    # Auto-generate credentials if client-id and secret passed
+    if args.client_id and args.client_secret:
+        create_credentials_json(check_creds, args.client_id, args.client_secret)
+        print(f"[OK] Google credentials file created automatically at {check_creds}")
+
     if not check_creds.exists():
-        print(f"\n[Warning] Google credentials file '{creds_path}' was not found at {check_creds}.")
-        print("  To sync coursework directly from Google Classroom:")
-        print("  1. Download OAuth 2.0 Client credentials from Google Cloud Console.")
-        print(f"  2. Save it as '{creds_path}'.")
-        print("  (Note: You can still compile PDFs and stage deliverables offline without credentials.)")
+        if args.open_browser:
+            print("[*] Opening Google Cloud Console in your default browser...")
+            webbrowser.open("https://console.cloud.google.com/apis/credentials")
+
+        if is_interactive:
+            print("\n" + "=" * 58)
+            print("     Google Classroom Credentials Helper (Super Easy)     ")
+            print("=" * 58)
+            print("Chitti needs your Google OAuth credentials to sync with Google Classroom.")
+            print("\nChoose an option:")
+            print("  [1] Paste Client ID and Client Secret (I'll generate credentials.json)")
+            print("  [2] Open Google Cloud Console in browser")
+            print("  [3] Skip for now (continue offline)")
+            choice = prompt_value("Select an option (1/2/3)", default="3")
+            if choice == "1":
+                cid = prompt_value("Google Client ID (e.g. *.apps.googleusercontent.com)", required=True)
+                csec = prompt_value("Google Client Secret (e.g. GOCSPX-*)", required=True)
+                if cid and csec:
+                    create_credentials_json(check_creds, cid, csec)
+                    print(f"\n[OK] Successfully created and verified {check_creds}!")
+            elif choice == "2":
+                print("[*] Opening Google Cloud Console in your browser...")
+                webbrowser.open("https://console.cloud.google.com/apis/credentials")
+                print("Steps in browser:")
+                print("  1. Click 'Create Credentials' -> 'OAuth client ID'")
+                print("  2. Select Application type: 'Desktop App' -> Name: 'Chitti'")
+                print("  3. Download JSON and save as 'credentials.json' here.")
+        else:
+            print(f"\n[Warning] Google credentials file '{creds_path}' was not found at {check_creds}.")
+            print("  To sync coursework directly from Google Classroom:")
+            print("  1. Download OAuth 2.0 Client credentials from Google Cloud Console.")
+            print(f"  2. Save it as '{creds_path}'.")
+            print("  (Tip: You can pass --client-id and --client-secret to auto-create credentials.json)")
     else:
         print(f"[OK] Google credentials file verified at {check_creds}")
 

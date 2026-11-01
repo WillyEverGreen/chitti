@@ -39,7 +39,7 @@ def test_no_hardcoded_user_secrets_in_src():
         if any(ignored in Path(dirpath).parts for ignored in ignored_dirs):
             continue
         for f in filenames:
-            if f.endswith(checked_extensions) and f not in ("credentials.json", "token.json"):
+            if f.endswith(checked_extensions) and f not in ("credentials.json", "token.json", "student_config.json"):
                 filepath = Path(dirpath) / f
                 content = filepath.read_text(encoding="utf-8", errors="ignore")
                 for pattern in FORBIDDEN_PATTERNS:

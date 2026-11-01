@@ -103,6 +103,12 @@ def cmd_setup(args: argparse.Namespace, remaining_argv: List[str]) -> int:
         setup_argv.extend(["--port", str(args.port)])
     if args.config_path:
         setup_argv.extend(["--config-path", args.config_path])
+    if getattr(args, "client_id", None):
+        setup_argv.extend(["--client-id", args.client_id])
+    if getattr(args, "client_secret", None):
+        setup_argv.extend(["--client-secret", args.client_secret])
+    if getattr(args, "open_browser", False):
+        setup_argv.append("--open-browser")
     setup_argv.extend(remaining_argv)
 
     return classroom_setup.run_setup(setup_argv)
@@ -120,8 +126,22 @@ def cmd_courses(args: argparse.Namespace) -> int:
         classroom_manager.display_courses(courses)
         return 0
     except Exception as exc:
+        if "credentials.json" in str(exc):
+            print("\n" + "=" * 62)
+            print("        🤖 Chitti Helper: Google Credentials Needed           ")
+            print("=" * 62)
+            print("Google credentials.json was not found in this directory.\n")
+            print("Super easy options to connect:")
+            print("  [1] If you have Client ID & Client Secret:")
+            print("      python chitti.py setup --client-id YOUR_ID --client-secret YOUR_SECRET")
+            print("  [2] Run the interactive helper wizard:")
+            print("      python chitti.py setup")
+            print("  [3] Auto-open Google Cloud Console in your browser:")
+            print("      python chitti.py setup --open-browser")
+            print("=" * 62 + "\n")
+            return 1
         print(f"[!] Error accessing Google Classroom: {exc}")
-        print("Tip: Run 'python classroom_agent.py setup' to configure Google Classroom API credentials.")
+        print("Tip: Run 'python chitti.py setup' to configure Google Classroom API credentials.")
         return 1
 
 
@@ -495,20 +515,20 @@ def cmd_review(args: argparse.Namespace) -> int:
     if not output_root.exists():
         if HAS_RICH and console:
             console.print(f"[yellow]No staged deliverables found. Output directory does not exist: {output_root}[/yellow]")
-            console.print("Tip: Run 'python classroom_agent.py build' to create deliverables.")
+            console.print("Tip: Run 'python chitti.py build' to create deliverables.")
         else:
             print(f"No staged deliverables found. Output directory does not exist: {output_root}")
-            print("Tip: Run 'python classroom_agent.py build' to create deliverables.")
+            print("Tip: Run 'python chitti.py build' to create deliverables.")
         return 0
 
     manifest_files = list(output_root.glob("**/manifest.json"))
     if not manifest_files:
         if HAS_RICH and console:
             console.print(f"[yellow]No staged deliverables found in '{output_root}'. Output directory is empty.[/yellow]")
-            console.print("Tip: Run 'python classroom_agent.py build' to compile and stage an assignment.")
+            console.print("Tip: Run 'python chitti.py build' to compile and stage an assignment.")
         else:
             print(f"No staged deliverables found in '{output_root}'. Output directory is empty.")
-            print("Tip: Run 'python classroom_agent.py build' to compile and stage an assignment.")
+            print("Tip: Run 'python chitti.py build' to compile and stage an assignment.")
         return 0
 
     staged_items: List[Dict[str, Any]] = []
@@ -621,7 +641,7 @@ def cmd_submit(args: argparse.Namespace) -> int:
             files_to_submit = [str(staged_pdf)]
         else:
             print(f"[!] No file specified and no staged deliverable found at:\n    {staged_pdf}")
-            print("Tip: Run 'python classroom_agent.py build' first, or provide '--file <path>'.")
+            print("Tip: Run 'python chitti.py build' first, or provide '--file <path>'.")
             return 1
 
     port = args.port or config.chrome_debug_port or 9444
@@ -679,6 +699,9 @@ Quick Workflow Guide:
     setup_parser.add_argument("-t", "--token", help="Path to Google OAuth token.json")
     setup_parser.add_argument("-p", "--port", type=int, help="Chrome Remote Debugging port")
     setup_parser.add_argument("--config-path", help="Path to student_config.json")
+    setup_parser.add_argument("--client-id", help="Google OAuth Client ID to auto-generate credentials.json")
+    setup_parser.add_argument("--client-secret", help="Google OAuth Client Secret to auto-generate credentials.json")
+    setup_parser.add_argument("--open-browser", action="store_true", help="Open Google Cloud Console in browser")
 
     # Command: courses
     subparsers.add_parser("courses", help="List all enrolled Google Classroom courses")

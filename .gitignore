@@ -10,6 +10,7 @@ __pycache__/
 # OAuth credentials & access tokens
 credentials.json
 token.json
+student_config.json
 
 # Deliverables & personal coursework files (protect personal PDFs, docs, student IDs)
 deliverables/*
