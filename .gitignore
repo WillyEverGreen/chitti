@@ -31,3 +31,13 @@ output/
 # Logs and system generated files
 *.log
 .system_generated/
+
+# Extra notes, viva guides, study materials, and scratch files
+notes/
+*notes*
+*.notes.*
+study_guides/
+viva_guides/
+extra_notes/
+scratch/
+*.scratch.*
